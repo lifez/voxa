@@ -1,0 +1,40 @@
+{
+  "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+  "node": "v26.8.2",
+  "method": "isolated idle daemons; 5 warmups; 100 shuffled rounds; status only; no mic/API/clipboard",
+  "results": {
+    "node_socket": {
+      "n": 100,
+      "median_ms": 0.101131,
+      "p95_ms": 0.124856,
+      "min_ms": 0.068971,
+      "max_ms": 0.142579
+    },
+    "c_socket": {
+      "n": 100,
+      "median_ms": 0.0422705,
+      "p95_ms": 0.056757,
+      "min_ms": 0.030007,
+      "max_ms": 0.064141
+    },
+    "node_cli": {
+      "n": 100,
+      "median_ms": 21.689081,
+      "p95_ms": 23.196397,
+      "min_ms": 20.377465,
+      "max_ms": 24.295997
+    },
+    "c_cli": {
+      "n": 100,
+      "median_ms": 2.7899675,
+      "p95_ms": 2.973434,
+      "min_ms": 2.442991,
+      "max_ms": 3.225912
+    }
+  },
+  "idle_rss_kib": {
+    "node": 64508,
+    "c": 9108
+  },
+  "rss_note": "includes shared libraries; excludes recording worker and audio/paste processes; not PSS"
+}

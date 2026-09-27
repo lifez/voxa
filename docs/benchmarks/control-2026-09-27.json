@@ -1,0 +1,36 @@
+{
+  "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+  "python": "3.14.7",
+  "node": "v26.8.2",
+  "method": "warm filesystem cache; 5 warmups; shuffled rounds; subprocess start to exit; status only",
+  "results": {
+    "node_lazy": {
+      "n": 100,
+      "min_ms": 20.891982,
+      "median_ms": 21.994358499999997,
+      "p95_ms": 24.393145,
+      "max_ms": 26.335183
+    },
+    "python": {
+      "n": 100,
+      "min_ms": 11.212679,
+      "median_ms": 11.932914499999999,
+      "p95_ms": 12.431731,
+      "max_ms": 13.112818
+    },
+    "c": {
+      "n": 100,
+      "min_ms": 0.47152,
+      "median_ms": 0.636282,
+      "p95_ms": 0.748393,
+      "max_ms": 0.812645
+    },
+    "node_baseline": {
+      "n": 100,
+      "min_ms": 37.313831,
+      "median_ms": 42.0992995,
+      "p95_ms": 44.095911,
+      "max_ms": 45.205506
+    }
+  }
+}

@@ -16,6 +16,7 @@ if [[ -f "$plist" ]]; then
   rm "$plist"
 fi
 cp dist/*.js "$resources/dist/"
+swiftc -O mac/paste.swift -framework AppKit -o "$resources/dist/voxa-paste"
 rm -rf "$resources/node_modules"
 cp -R node_modules "$resources/"
 rm -f "$resources/bin/voxa-keys" # The app itself now owns the shortcuts and Accessibility grant.

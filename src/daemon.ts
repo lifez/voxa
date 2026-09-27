@@ -1,7 +1,5 @@
 import { createServer, connect } from 'node:net';
 import { existsSync, lstatSync, mkdirSync, unlinkSync, chmodSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { capture, audioPeak, type Capture } from './audio.js';
@@ -10,8 +8,8 @@ import { paste } from './paste.js';
 import { Osd } from './osd.js';
 import { loadConfig, loadKeyFile, type Config } from './config.js';
 
-export function runtimeDir() { return process.platform === 'darwin' ? join(homedir(), 'Library', 'Caches', 'voxa') : process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.() ?? 0}`; }
-export function socketPath() { return join(runtimeDir(), 'voxa.sock'); }
+import { runtimeDir, socketPath } from './runtime.js';
+export { runtimeDir, socketPath } from './runtime.js';
 type State = 'idle' | 'recording' | 'committing';
 export class Daemon {
   state: State = 'idle';

@@ -248,12 +248,13 @@ export async function setup() {
 export async function doctor() {
   let failures = 0;
   const check = (name: string, ok: boolean, fix: string) => { console.log(`${ok ? 'OK' : 'FAIL'} ${name}${ok ? '' : ` — ${fix}`}`); if (!ok) failures++; };
-  for (const cmd of (process.platform === 'darwin' ? ['node', 'pbcopy', 'osascript'] : ['node', 'pw-record', 'wl-copy', 'wtype', 'hyprctl'])) check(cmd, available(cmd), 'install required package (see README)');
+  for (const cmd of (process.platform === 'darwin' ? ['node', 'osascript'] : ['node', 'pw-record', 'wtype', 'hyprctl'])) check(cmd, available(cmd), 'install required package (see README)');
   check('API key', hasKey(), 'run voxa settings');
   if (hasKey()) check('API key permissions', (statSync(join(configDir(), 'env')).mode & 0o077) === 0, 'chmod 600 ~/.config/voxa/env');
   try { loadConfig(); check('config.json', true, ''); } catch (e) { check('config.json', false, (e as Error).message); }
   if (process.platform === 'darwin') {
     check('Voxa.app', existsSync(join(homedir(), 'Applications/Voxa.app/Contents/MacOS/Voxa')), 'bash scripts/install-macos.sh');
+    check('paste helper', existsSync(new URL('./voxa-paste', import.meta.url)), 'reinstall with bash scripts/install-macos.sh (development: swiftc -O mac/paste.swift -framework AppKit -o dist/voxa-paste)');
     check('daemon socket', existsSync(join(homedir(), 'Library/Caches/voxa/voxa.sock')), 'check ~/Library/Logs/voxa.log');
     console.log('Use Voxa.app menu bar Test microphone (peak > 0); check Microphone and Accessibility for Voxa.app in System Settings.');
   } else {

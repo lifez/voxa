@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 function run(cmd: string, args: string[], input?: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -6,18 +7,23 @@ function run(cmd: string, args: string[], input?: string): Promise<void> {
     let error = '';
     p.stderr?.on('data', b => { error = (error + String(b)).slice(-1000); });
     p.on('error', reject);
-    // wl-copy forks a clipboard owner which inherits stderr; don't wait for its pipe to close.
-    p.on('exit', code => { p.stderr?.destroy(); code === 0 ? resolve() : reject(Error(`${cmd} exited ${code}: ${error}`)); });
+    p.on('close', code => { code === 0 ? resolve() : reject(Error(`${cmd} exited ${code}: ${error}`)); });
+    p.stdin?.on('error', reject);
     if (input !== undefined) p.stdin?.end(input, 'utf8');
   });
 }
-export async function paste(text: string): Promise<void> {
-  if (!text.trim()) return;
-  if (process.platform === 'darwin') {
-    await run('pbcopy', [], text);
-    await run('osascript', ['-e', 'tell application "System Events" to key code 9 using command down']);
-  } else {
-    await run('wl-copy', ['--type', 'text/plain;charset=utf-8'], text);
-    await run('wtype', ['-M', 'ctrl', 'v', '-m', 'ctrl']);
-  }
+
+// Separate command selection from process execution for tests without touching the clipboard.
+export function createPaster(platform: string, execute = run) {
+  return async (text: string): Promise<void> => {
+    if (!text.trim()) return;
+    if (platform === 'darwin') {
+      await execute(fileURLToPath(new URL('./voxa-paste', import.meta.url)), [], text);
+    } else {
+      // stdin avoids argument-size limits and keeps transcripts out of process arguments.
+      await execute('wtype', ['-'], text);
+    }
+  };
 }
+
+export const paste = createPaster(process.platform);

@@ -1,6 +1,6 @@
 # Voxa for Omarchy and macOS
 
-Hold F10 to record and release to transcribe, or press F11 once to record and again to transcribe. Voxa pastes via the Wayland clipboard on Omarchy and the system clipboard on macOS. Omarchy and the macOS app show a focus-free recording/transcribing OSD. There is no idle microphone capture, transcript persistence, or LLM. Logs omit transcripts unless `debug` is enabled. The clipboard remains set to the transcript.
+Hold F10 to record and release to transcribe, or press F11 once to record and again to transcribe. Voxa types directly with `wtype` on Omarchy without touching the clipboard. On macOS it temporarily uses the system clipboard, then restores its previous contents. Omarchy and the macOS app show a focus-free recording/transcribing OSD. There is no idle microphone capture, transcript persistence, or LLM. Logs omit transcripts unless `debug` is enabled. macOS snapshots all readable pasteboard item types and restores after a 250 ms grace period, unless another copy changed the clipboard. This delay is best-effort, not confirmation that the target app consumed the paste; unusually slow apps may need longer. Clipboard history tools may still capture the temporary transcript.
 
 ## macOS (experimental)
 
@@ -18,7 +18,7 @@ Uninstall: quit Voxa from the menu bar, disable its login item in System Setting
 
 ## Dependencies / installation (Arch/Omarchy)
 
-Requires Node.js 22+, `npm`, PipeWire (`pw-record`), `wl-clipboard`, `wtype`, and Hyprland. On Arch, install missing packages with `sudo pacman -S nodejs npm pipewire wl-clipboard wtype`.
+Requires Node.js 22+, `npm`, PipeWire (`pw-record`), `wtype`, and Hyprland. On Arch, install missing packages with `sudo pacman -S nodejs npm pipewire wtype`.
 
 ```sh
 bash scripts/install.sh
@@ -51,14 +51,14 @@ Press F11 again to stop recording, or release F10 in hold mode. Empty transcript
 
 ## Configuration
 
-Use `voxa settings` or edit `~/.config/voxa/config.json` (see `config.example.json`). Changes apply on next recording; changing the API key restarts the service. Default is `language: "th"`, `secondaryLanguages: ["en"]`; for automatic detection set `language: null`, `secondaryLanguages: []` and compare results for Thai/English code switching. `keyterms` biases technical terms. `stopPunctuation: false` (default) removes a final full stop (`.` or `。`) from the transcript; set it to `true` to keep it. Internal punctuation and question marks are unchanged. This is also available in `voxa settings`. `pasteCommand` is retained for Linux compatibility (`wtype`); macOS uses `pbcopy` and `osascript` regardless of this setting. `debug: true` logs transcript text; leave false for privacy. ElevenLabs may retain request data per your account's policy.
+Use `voxa settings` or edit `~/.config/voxa/config.json` (see `config.example.json`). Changes apply on next recording; changing the API key restarts the service. Default is `language: "th"`, `secondaryLanguages: ["en"]`; for automatic detection set `language: null`, `secondaryLanguages: []` and compare results for Thai/English code switching. `keyterms` biases technical terms. `stopPunctuation: false` (default) removes a final full stop (`.` or `。`) from the transcript; set it to `true` to keep it. Internal punctuation and question marks are unchanged. This is also available in `voxa settings`. `pasteCommand` is retained for Linux compatibility (`wtype`); macOS uses a native pasteboard helper and `osascript` regardless of this setting. Reinstall the macOS app to build the helper; for development, run `swiftc -O mac/paste.swift -framework AppKit -o dist/voxa-paste` after `npm run build`. `debug: true` logs transcript text; leave false for privacy. ElevenLabs may retain request data per your account's policy.
 
 On Omarchy, set `audioDevice` to a PipeWire source name or ID from `wpctl status` (or leave `default`). Focus must remain in the destination during transcription; Voxa does not restore focus.
 
 ## Troubleshooting (Omarchy)
 
 - Microphone: run `voxa test-mic`, `wpctl status`, and `systemctl --user status pipewire wireplumber`.
-- Paste: check `WAYLAND_DISPLAY` and `command -v wl-copy wtype`, then run `voxa test-paste` in a disposable focused field. Some terminals require Ctrl+Shift+V; Voxa uses Ctrl+V.
+- Text insertion: check `WAYLAND_DISPLAY` and `command -v wtype`, then run `voxa test-paste` in a disposable focused field. Omarchy uses direct typing, not Ctrl+V; test Thai/English in your target apps. Newlines may act as Enter and submit a chat or terminal command. On macOS, check Automation permission for System Events and reinstall if the paste helper is missing.
 - OSD: check `omarchy-shell shell listPlugins` for an enabled `voxa.osd`; run `omarchy-shell shell rescanPlugins` if needed.
 - Shortcuts: check `hyprctl binds -j`. The user systemd manager needs `WAYLAND_DISPLAY` and `PATH` imported (normally handled by Omarchy); inspect with `systemctl --user show-environment`.
 
@@ -77,3 +77,7 @@ systemctl --user daemon-reload
 ```
 
 Development: `npm ci && npm test`. `voxa doctor` checks local setup; use `voxa test-scribe` to test transcription with a valid ElevenLabs key.
+
+Performance: [benchmark results and optimization experiments (2026-09-27)](docs/benchmarks/2026-09-27.md) include Node/Python/C control clients and PipeWire startup measurements. Run `python3 bench/control-latency.py` after building for a read-only `status` benchmark (requires a running daemon and C compiler).
+
+Experimental Linux C daemon: see [`native/README.md`](native/README.md) for build/run instructions, tests, OSD and Node-vs-C idle benchmarks. `make -C native` builds a standalone daemon with a separate socket. To switch an existing Linux service and shortcuts, run `bash scripts/use-native.sh`; it preserves Node, backs up the launcher and prints a rollback command. Recording/transcription/direct typing and the Omarchy OSD are supported; macOS is not. `voxa test-osd` previews native display states without recording. Live ElevenLabs and target-app behavior still need verification; integration tests use mocks.

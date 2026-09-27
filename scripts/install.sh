@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-for cmd in node npm pw-record wl-copy wtype; do command -v "$cmd" >/dev/null || { echo "Missing $cmd (Arch: nodejs npm pipewire wl-clipboard wtype)" >&2; exit 1; }; done
+for cmd in node npm pw-record wtype; do command -v "$cmd" >/dev/null || { echo "Missing $cmd (Arch: nodejs npm pipewire wtype)" >&2; exit 1; }; done
 : "${XDG_CONFIG_HOME:=$HOME/.config}"
 install_dir="$HOME/.local/share/voxa"
 mkdir -p "$install_dir" "$HOME/.local/bin" "$XDG_CONFIG_HOME/voxa" "$XDG_CONFIG_HOME/systemd/user"

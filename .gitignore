@@ -7,3 +7,5 @@ __pycache__/
 .env.*
 env
 config.json
+native/voxa-c
+native/voxa-c-test
