@@ -47,8 +47,9 @@ function save(path: string, content: string, mode: number) {
   catch (e) { try { unlinkSync(temp); } catch {} throw e; }
 }
 export function saveKey(key: string) {
-  if (!key || !/^[A-Za-z0-9._~-]+$/.test(key)) throw Error('invalid API key (expected letters, numbers, . _ ~ or -)');
-  save(join(configDir(), 'env'), `ELEVENLABS_API_KEY=${key}\n`, 0o600);
+  const keys = key.split(',').map(x => x.trim());
+  if (!keys.length || keys.length > 5 || !keys.every(x => /^[A-Za-z0-9._~-]+$/.test(x))) throw Error('invalid API key (enter 1–5 keys, separated by commas)');
+  save(join(configDir(), 'env'), `ELEVENLABS_API_KEY=${keys.join(',')}\n`, 0o600);
 }
 export function hasKey() {
   try { return /^ELEVENLABS_API_KEY=.+$/m.test(readFileSync(join(configDir(), 'env'), 'utf8')); } catch { return false; }
@@ -113,7 +114,7 @@ type Section = 'API key' | 'Hold shortcut' | 'Toggle shortcut' | 'Language' | 'M
 const sections: Section[] = ['API key', 'Hold shortcut', 'Toggle shortcut', 'Language', 'Microphone', 'Stop punctuation'];
 
 async function editKey(ask: Ask) {
-  const key = await ask('ElevenLabs API key — enable Speech to Text access when creating the key (blank = keep existing)', '', true);
+  const key = await ask('ElevenLabs API keys — 1–5 keys separated by commas; enable Speech to Text for each (blank = keep existing)', '', true);
   if (key === null) return false;
   if (!key) {
     if (!hasKey()) throw Error('API key is required; enter a key or cancel');

@@ -316,18 +316,19 @@ final class Voxa: NSObject, NSApplicationDelegate {
         let hasKey = (try? String(contentsOf: path, encoding: .utf8))?.range(of: #"(?m)^ELEVENLABS_API_KEY=.+$"#, options: .regularExpression) != nil
         let alert = NSAlert()
         alert.messageText = "ElevenLabs API Key"
-        alert.informativeText = "Enable Speech to Text access for this key. \(hasKey ? "A key is already saved; leave blank to keep it." : "Enter a key to start dictating.")"
+        alert.informativeText = "Enter 1–5 keys separated by commas. Enable Speech to Text for each. \(hasKey ? "Leave blank to keep saved keys." : "Enter a key to start dictating.")"
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "API key"
+        field.placeholderString = "key1, key2, key3"
         alert.accessoryView = field
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let key = field.stringValue
         if key.isEmpty && hasKey { return }
-        guard !key.isEmpty, key.range(of: #"^[A-Za-z0-9._~-]+$"#, options: .regularExpression) != nil else {
-            showKeyError("Invalid API key (expected letters, numbers, . _ ~ or -).")
+        let keys = key.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard keys.count <= 5, keys.allSatisfy({ !$0.isEmpty && $0.range(of: #"^[A-Za-z0-9._~-]+$"#, options: .regularExpression) != nil }) else {
+            showKeyError("Enter 1–5 valid API keys separated by commas.")
             return
         }
         do {
@@ -337,7 +338,7 @@ final class Voxa: NSObject, NSApplicationDelegate {
             let fd = Darwin.open(temp.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
             guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
             let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-            try handle.write(contentsOf: Data("ELEVENLABS_API_KEY=\(key)\n".utf8))
+            try handle.write(contentsOf: Data("ELEVENLABS_API_KEY=\(keys.joined(separator: ","))\n".utf8))
             try handle.close()
             guard Darwin.rename(temp.path, path.path) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
         } catch { showKeyError("Could not save API key: \(error.localizedDescription)") }

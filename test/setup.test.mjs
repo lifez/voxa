@@ -28,9 +28,11 @@ test('stores keys privately without exposing them in config', () => {
   try {
     process.env.XDG_CONFIG_HOME = dir;
     assert.throws(() => saveKey('bad\nINJECT=1'), /invalid API key/);
-    saveKey('test_key-123');
+    assert.throws(() => saveKey('one,'), /invalid API key/);
+    assert.throws(() => saveKey('a,b,c,d,e,f'), /invalid API key/);
+    saveKey('test_key-123, second_key');
     assert.equal(hasKey(), true);
-    assert.equal(readFileSync(join(dir, 'voxa/env'), 'utf8'), 'ELEVENLABS_API_KEY=test_key-123\n');
+    assert.equal(readFileSync(join(dir, 'voxa/env'), 'utf8'), 'ELEVENLABS_API_KEY=test_key-123,second_key\n');
     assert.equal(statSync(join(dir, 'voxa/env')).mode & 0o077, 0);
   } finally {
     if (previous === undefined) delete process.env.XDG_CONFIG_HOME;

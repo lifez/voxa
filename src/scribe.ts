@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import type { Config } from './config.js';
+import { nextApiKey, type Config } from './config.js';
 
 // Remove only a sentence-final full stop; preserve internal punctuation and questions.
 export function formatTranscript(text: string, stopPunctuation: boolean): string {
@@ -21,8 +21,7 @@ export class Scribe {
   private reject!: (e: Error) => void;
   readonly result: Promise<string>;
   constructor(config: Config, onError: (error: Error) => void) {
-    const key = process.env.ELEVENLABS_API_KEY;
-    if (!key) throw Error('ELEVENLABS_API_KEY is not set');
+    const key = nextApiKey();
     this.stopPunctuation = config.stopPunctuation;
     const query = new URLSearchParams({ model_id: 'scribe_v2_realtime', audio_format: 'pcm_16000', commit_strategy: 'manual' });
     if (config.language) query.set('language_code', config.language);

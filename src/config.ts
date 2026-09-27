@@ -16,12 +16,21 @@ export function validate(value: unknown): Config {
   if (typeof c.audioDevice !== 'string' || !c.audioDevice || typeof c.debug !== 'boolean' || c.pasteCommand !== 'wtype' || typeof c.stopPunctuation !== 'boolean') throw Error('invalid audioDevice, debug, pasteCommand or stopPunctuation');
   return c;
 }
+let keyIndex = 0;
+export function nextApiKey(): string {
+  if (!process.env.ELEVENLABS_API_KEY) throw Error('ELEVENLABS_API_KEY is not set');
+  const keys = process.env.ELEVENLABS_API_KEY.split(',').map(key => key.trim());
+  if (keys.length > 5 || !keys.every(key => /^[A-Za-z0-9._~-]+$/.test(key))) throw Error('invalid ELEVENLABS_API_KEY');
+  return keys[keyIndex++ % keys.length];
+}
 export function loadKeyFile(refresh = false) {
   if (!refresh && process.env.ELEVENLABS_API_KEY) return;
   try {
     const env = readFileSync(join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'voxa/env'), 'utf8');
     const line = env.split(/\r?\n/).find(s => /^ELEVENLABS_API_KEY=/.test(s));
-    process.env.ELEVENLABS_API_KEY = line?.slice('ELEVENLABS_API_KEY='.length).replace(/^(['"])(.*)\1$/, '$2') || '';
+    const key = line?.slice('ELEVENLABS_API_KEY='.length).replace(/^(['"])(.*)\1$/, '$2') || '';
+    if (key !== process.env.ELEVENLABS_API_KEY) keyIndex = 0;
+    process.env.ELEVENLABS_API_KEY = key;
   } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; if (refresh) delete process.env.ELEVENLABS_API_KEY; }
 }
 export function loadConfig(): Config {

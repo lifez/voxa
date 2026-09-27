@@ -27,7 +27,11 @@ export class Daemon {
   private keys?: ChildProcess;
   constructor() { this.config = loadConfig(); }
   private log(message: string) { console.log(`[voxa] ${message}`); }
-  private error(e: Error) { console.error(`[voxa] ${e.message.replaceAll(process.env.ELEVENLABS_API_KEY || '\0', '[redacted]')}`); }
+  private error(e: Error) {
+    let message = e.message;
+    for (const key of (process.env.ELEVENLABS_API_KEY ?? '').split(',').map(x => x.trim()).filter(Boolean)) message = message.replaceAll(key, '[redacted]');
+    console.error(`[voxa] ${message}`);
+  }
   start() {
     if (this.state !== 'idle') return;
     try {
