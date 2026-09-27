@@ -1,6 +1,6 @@
 # Voxa for Omarchy and macOS
 
-Hold F10 to record and release to transcribe, or press F11 once to record and again to transcribe. Voxa pastes via the Wayland clipboard on Omarchy and the system clipboard on macOS. Omarchy shows a focus-free recording/transcribing OSD. There is no idle microphone capture, transcript persistence, or LLM. Logs omit transcripts unless `debug` is enabled. The clipboard remains set to the transcript.
+Hold F10 to record and release to transcribe, or press F11 once to record and again to transcribe. Voxa pastes via the Wayland clipboard on Omarchy and the system clipboard on macOS. Omarchy and the macOS app show a focus-free recording/transcribing OSD. There is no idle microphone capture, transcript persistence, or LLM. Logs omit transcripts unless `debug` is enabled. The clipboard remains set to the transcript.
 
 ## macOS (experimental)
 
@@ -11,7 +11,7 @@ bash scripts/install-macos.sh
 ~/.local/bin/voxa setup
 ```
 
-The installer creates `~/Applications/Voxa.app`, removes the old launchd agent, opens the app and registers it as a login item. Grant **Microphone** and **Accessibility** to `~/Applications/Voxa.app` in System Settings → Privacy & Security. If shortcuts are not active yet, use **Enable / Retry Shortcuts** in the menu bar after granting Accessibility. Grant Automation to System Events when prompted for paste. Hold **Command+Shift+R** to record; **Command+Shift+T** toggles. Voxa consumes these shortcuts and shows notifications. Only the system default microphone is supported; change the default in macOS Sound settings. `voxa settings` is terminal-only.
+The installer creates `~/Applications/Voxa.app`, removes the old launchd agent, opens the app and registers it as a login item. Grant **Microphone** and **Accessibility** to `~/Applications/Voxa.app` in System Settings → Privacy & Security. If shortcuts are not active yet, use **Enable / Retry Shortcuts** in the menu bar after granting Accessibility. Grant Automation to System Events when prompted for paste. Hold **Command+Shift+R** to record; **Command+Shift+T** toggles. Voxa consumes these shortcuts and shows a non-interactive OSD on the current screen while recording/transcribing; success and errors disappear after 1.3 seconds. Only the system default microphone is supported; change the default in macOS Sound settings. `voxa settings` is terminal-only.
 
 **Verify the actual app path:** click Voxa in the menu bar → **Test microphone (speak for 2 seconds)**. The menu bar must show `mic OK (peak N)` with **N > 0**. A successful `voxa test-mic` from Terminal does *not* establish that the app path works. Then speak with the shortcut and check `~/Library/Logs/voxa.log` for `peak > 0` and `pasted N chars`. If silent, check Voxa's Microphone permission, macOS default input, and restart Voxa. Do not assume a permission granted to Terminal or an FFmpeg subprocess applies to the app. Login item status can be checked in System Settings → General → Login Items; enable Voxa manually if registration failed. This path has not been verified with live speech on this machine.
 

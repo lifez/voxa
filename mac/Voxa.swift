@@ -7,6 +7,9 @@ import Darwin
 // Microphone capture lives in this app process, not in ffmpeg or the Node child: TCC grants the app itself.
 final class Voxa: NSObject, NSApplicationDelegate {
     private var server: Int32 = -1
+    private var osdServer: Int32 = -1
+    private var osdPanel: NSPanel?
+    private var osdTimer: Timer?
     private var client: Int32 = -1
     private var ownsSocket = false
     private var engine: AVAudioEngine?
@@ -19,6 +22,7 @@ final class Voxa: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
     private let socketURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Caches/voxa/mic.sock")
+    private var osdURL: URL { socketURL.deletingLastPathComponent().appendingPathComponent("osd.sock") }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -65,20 +69,24 @@ final class Voxa: NSObject, NSApplicationDelegate {
             if connected == 0 { throw NSError(domain: "Voxa already running", code: 1) }
             try FileManager.default.removeItem(at: socketURL)
         }
-        server = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard server >= 0 else { throw NSError(domain: "socket", code: Int(errno)) }
-        var address = sockaddr_un()
-        address.sun_family = sa_family_t(AF_UNIX)
-        guard socketURL.path.utf8.count < MemoryLayout.size(ofValue: address.sun_path) else { throw NSError(domain: "socket path too long", code: 1) }
-        let capacity = MemoryLayout.size(ofValue: address.sun_path)
-        socketURL.path.withCString { path in
-            withUnsafeMutablePointer(to: &address.sun_path) { pointer in
-                _ = strncpy(UnsafeMutableRawPointer(pointer).assumingMemoryBound(to: CChar.self), path, capacity - 1)
+        server = try openSocket(socketURL)
+        ownsSocket = true
+        // The status channel is separate from the raw PCM stream.
+        if FileManager.default.fileExists(atPath: osdURL.path) { try FileManager.default.removeItem(at: osdURL) }
+        osdServer = try openSocket(osdURL)
+        DispatchQueue.global(qos: .utility).async {
+            while self.osdServer >= 0 {
+                let fd = accept(self.osdServer, nil, nil)
+                if fd < 0 { break }
+                var bytes = [UInt8]()
+                var byte: UInt8 = 0
+                while bytes.count < 32 && read(fd, &byte, 1) == 1 && byte != 10 { bytes.append(byte) }
+                close(fd)
+                if let state = String(bytes: bytes, encoding: .utf8) {
+                    DispatchQueue.main.async { self.showOsd(state) }
+                }
             }
         }
-        let bound = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(server, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
-        guard bound == 0, chmod(socketURL.path, 0o600) == 0, listen(server, 1) == 0 else { throw NSError(domain: "mic socket", code: Int(errno)) }
-        ownsSocket = true
         signal(SIGPIPE, SIG_IGN)
         let resources = Bundle.main.resourceURL!
         let executable = try String(contentsOf: resources.appendingPathComponent("node-path"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -115,6 +123,74 @@ final class Voxa: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.sync { self.disconnected(fd) }
                 close(fd)
             }
+        }
+    }
+
+    private func openSocket(_ url: URL) throws -> Int32 {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw NSError(domain: "socket", code: Int(errno)) }
+        do {
+            var address = sockaddr_un()
+            address.sun_family = sa_family_t(AF_UNIX)
+            guard url.path.utf8.count < MemoryLayout.size(ofValue: address.sun_path) else { throw NSError(domain: "socket path too long", code: 1) }
+            let capacity = MemoryLayout.size(ofValue: address.sun_path)
+            url.path.withCString { path in
+                withUnsafeMutablePointer(to: &address.sun_path) { pointer in
+                    _ = strncpy(UnsafeMutableRawPointer(pointer).assumingMemoryBound(to: CChar.self), path, capacity - 1)
+                }
+            }
+            let bound = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
+            guard bound == 0, chmod(url.path, 0o600) == 0, listen(fd, 1) == 0 else { throw NSError(domain: "socket", code: Int(errno)) }
+            return fd
+        } catch { close(fd); throw error }
+    }
+
+    private func showOsd(_ state: String) {
+        if state == "hide" { osdTimer?.invalidate(); osdPanel?.orderOut(nil); return }
+        let label: String
+        let symbol: String
+        switch state {
+        case "recording": label = "Recording…"; symbol = "●"
+        case "committing": label = "Transcribing…"; symbol = "◌"
+        case "done": label = "Pasted"; symbol = "✓"
+        case "error": label = "Dictation failed"; symbol = "!"
+        default: return
+        }
+        osdTimer?.invalidate()
+        if osdPanel == nil {
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 205, height: 50),
+                                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel.level = .statusBar
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.ignoresMouseEvents = true
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            let background = NSView(frame: NSRect(x: 0, y: 0, width: 205, height: 50))
+            background.wantsLayer = true
+            background.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.97).cgColor
+            background.layer?.cornerRadius = 12
+            let text = NSTextField(labelWithString: "")
+            text.identifier = NSUserInterfaceItemIdentifier("osdText")
+            text.frame = NSRect(x: 12, y: 12, width: 181, height: 26)
+            text.alignment = .center
+            text.font = .boldSystemFont(ofSize: 15)
+            background.addSubview(text)
+            panel.contentView = background
+            osdPanel = panel
+        }
+        if let text = osdPanel?.contentView?.subviews.first as? NSTextField {
+            text.stringValue = "\(symbol)  \(label)"
+            text.textColor = state == "recording" ? .systemRed : .labelColor
+        }
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+        if let frame = screen?.visibleFrame {
+            osdPanel?.setFrameOrigin(NSPoint(x: frame.midX - 102.5, y: frame.minY + 67))
+        }
+        osdPanel?.orderFrontRegardless()
+        osdTimer = Timer.scheduledTimer(withTimeInterval: state == "done" || state == "error" ? 1.3 : 120, repeats: false) { [weak self] _ in
+            self?.osdPanel?.orderOut(nil)
         }
     }
 
@@ -262,6 +338,8 @@ final class Voxa: NSObject, NSApplicationDelegate {
         if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false) }
         node?.terminate()
         if client >= 0 { shutdown(client, SHUT_RDWR) }
+        osdTimer?.invalidate()
+        if osdServer >= 0 { close(osdServer); osdServer = -1; try? FileManager.default.removeItem(at: osdURL) }
         if server >= 0 { close(server); server = -1 }
         if ownsSocket { try? FileManager.default.removeItem(at: socketURL) }
     }
