@@ -1,23 +1,11 @@
 #!/usr/bin/env node
 import { connect } from 'node:net';
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { Daemon, socketPath } from './daemon.js';
 import { capture, audioPeak } from './audio.js';
 import { paste } from './paste.js';
 import { Scribe } from './scribe.js';
-import { loadConfig } from './config.js';
+import { loadConfig, loadKeyFile } from './config.js';
 import { setup, settings, doctor } from './setup.js';
-
-function loadKeyFile() {
-  if (process.env.ELEVENLABS_API_KEY) return;
-  try {
-    const env = readFileSync(join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'voxa/env'), 'utf8');
-    const line = env.split(/\r?\n/).find(s => /^ELEVENLABS_API_KEY=/.test(s));
-    if (line) process.env.ELEVENLABS_API_KEY = line.slice('ELEVENLABS_API_KEY='.length).replace(/^(['"])(.*)\1$/, '$2');
-  } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
-}
 
 const [command, ...args] = process.argv.slice(2);
 if (command === 'setup') setup().catch(e => { console.error(`voxa: ${e.message}`); process.exitCode = 1; });

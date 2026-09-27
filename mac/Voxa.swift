@@ -28,6 +28,7 @@ final class Voxa: NSObject, NSApplicationDelegate {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Voxa"
         let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Set ElevenLabs API Key…", action: #selector(setAPIKey), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Enable / Retry Shortcuts", action: #selector(enableShortcuts), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Test microphone (speak for 2 seconds)", action: #selector(testMic), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit Voxa", action: #selector(quit), keyEquivalent: "q"))
@@ -307,6 +308,47 @@ final class Voxa: NSObject, NSApplicationDelegate {
         }
         if (code == 15 && holding && type == .keyDown) || (code == 17 && matched && (type == .keyDown || type == .keyUp)) { return nil }
         return Unmanaged.passUnretained(event)
+    }
+
+    @objc private func setAPIKey() {
+        let config = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config").path
+        let path = URL(fileURLWithPath: config).appendingPathComponent("voxa/env")
+        let hasKey = (try? String(contentsOf: path, encoding: .utf8))?.range(of: #"(?m)^ELEVENLABS_API_KEY=.+$"#, options: .regularExpression) != nil
+        let alert = NSAlert()
+        alert.messageText = "ElevenLabs API Key"
+        alert.informativeText = "Enable Speech to Text access for this key. \(hasKey ? "A key is already saved; leave blank to keep it." : "Enter a key to start dictating.")"
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.placeholderString = "API key"
+        alert.accessoryView = field
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let key = field.stringValue
+        if key.isEmpty && hasKey { return }
+        guard !key.isEmpty, key.range(of: #"^[A-Za-z0-9._~-]+$"#, options: .regularExpression) != nil else {
+            showKeyError("Invalid API key (expected letters, numbers, . _ ~ or -).")
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let temp = path.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: temp) }
+            let fd = Darwin.open(temp.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+            guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            try handle.write(contentsOf: Data("ELEVENLABS_API_KEY=\(key)\n".utf8))
+            try handle.close()
+            guard Darwin.rename(temp.path, path.path) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        } catch { showKeyError("Could not save API key: \(error.localizedDescription)") }
+    }
+
+    private func showKeyError(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Voxa API Key"
+        alert.informativeText = message
+        alert.runModal()
     }
 
     @objc private func testMic() {

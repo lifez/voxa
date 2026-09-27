@@ -16,6 +16,14 @@ export function validate(value: unknown): Config {
   if (typeof c.audioDevice !== 'string' || !c.audioDevice || typeof c.debug !== 'boolean' || c.pasteCommand !== 'wtype' || typeof c.stopPunctuation !== 'boolean') throw Error('invalid audioDevice, debug, pasteCommand or stopPunctuation');
   return c;
 }
+export function loadKeyFile(refresh = false) {
+  if (!refresh && process.env.ELEVENLABS_API_KEY) return;
+  try {
+    const env = readFileSync(join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'voxa/env'), 'utf8');
+    const line = env.split(/\r?\n/).find(s => /^ELEVENLABS_API_KEY=/.test(s));
+    process.env.ELEVENLABS_API_KEY = line?.slice('ELEVENLABS_API_KEY='.length).replace(/^(['"])(.*)\1$/, '$2') || '';
+  } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; if (refresh) delete process.env.ELEVENLABS_API_KEY; }
+}
 export function loadConfig(): Config {
   try { return validate(JSON.parse(readFileSync(join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'voxa/config.json'), 'utf8'))); }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { ...defaults }; throw e; }

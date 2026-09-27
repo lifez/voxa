@@ -8,7 +8,7 @@ import { capture, audioPeak, type Capture } from './audio.js';
 import { Scribe } from './scribe.js';
 import { paste } from './paste.js';
 import { Osd } from './osd.js';
-import { loadConfig, type Config } from './config.js';
+import { loadConfig, loadKeyFile, type Config } from './config.js';
 
 export function runtimeDir() { return process.platform === 'darwin' ? join(homedir(), 'Library', 'Caches', 'voxa') : process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.() ?? 0}`; }
 export function socketPath() { return join(runtimeDir(), 'voxa.sock'); }
@@ -31,6 +31,7 @@ export class Daemon {
   start() {
     if (this.state !== 'idle') return;
     try {
+      if (process.env.VOXA_MAC_APP === '1') loadKeyFile(true);
       this.config = loadConfig();
       const id = ++this.serial;
       this.scribe = new Scribe(this.config, e => { if (id === this.serial) this.fail(e); });
