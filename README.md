@@ -4,22 +4,18 @@ Hold F10 to record and release to transcribe, or press F11 once to record and ag
 
 ## macOS (experimental)
 
-Requires macOS with Node.js 22+, `ffmpeg` (`brew install ffmpeg`), Xcode Command Line Tools (`xcode-select --install`), and an ElevenLabs key with **Speech to Text** access. On a Mac, run:
+Requires macOS 13+, Node.js 22+, Xcode Command Line Tools, and an ElevenLabs key with **Speech to Text** access. The app captures audio **in its own process** using AVAudioEngine (not an FFmpeg child); Node receives 16 kHz mono PCM via a private local socket. Install from a Terminal once:
 
 ```sh
 bash scripts/install-macos.sh
 ~/.local/bin/voxa setup
-~/.local/bin/voxa test-mic
-~/.local/bin/voxa test-scribe
-~/.local/bin/voxa test-paste 'hello'  # focus a disposable text field first
-~/.local/bin/voxa doctor
 ```
 
-The installer builds `voxa-keys` and installs a per-user launchd agent. Grant Accessibility to `voxa-keys` in System Settings → Privacy & Security → Accessibility, and Automation to System Events when prompted for paste. Hold **Command+Shift+R** to record; **Command+Shift+T** toggles recording. Voxa consumes these shortcuts and shows native notifications for Recording, Transcribing, and errors. `voxa settings` is terminal-only on macOS; choose a different microphone with `ffmpeg -f avfoundation -list_devices true -i ""` and enter its audio index.
+The installer creates `~/Applications/Voxa.app`, removes the old launchd agent, opens the app and registers it as a login item. Grant **Microphone** and **Accessibility** to `~/Applications/Voxa.app` in System Settings → Privacy & Security. If shortcuts are not active yet, use **Enable / Retry Shortcuts** in the menu bar after granting Accessibility. Grant Automation to System Events when prompted for paste. Hold **Command+Shift+R** to record; **Command+Shift+T** toggles. Voxa consumes these shortcuts and shows notifications. Only the system default microphone is supported; change the default in macOS Sound settings. `voxa settings` is terminal-only.
 
-**Known issue:** launchd may capture silent microphone audio (`peak 0`) even when Terminal's `voxa test-scribe` works. Until a Mac app handles microphone permission, run `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.voxa.daemon.plist` and start `~/.local/bin/voxa daemon` in Terminal (leave it open). Check `~/Library/Logs/voxa.log` and `~/Library/Logs/voxa-error.log` for other failures. macOS is not tested in CI.
+**Verify the actual app path:** click Voxa in the menu bar → **Test microphone (speak for 2 seconds)**. The menu bar must show `mic OK (peak N)` with **N > 0**. A successful `voxa test-mic` from Terminal does *not* establish that the app path works. Then speak with the shortcut and check `~/Library/Logs/voxa.log` for `peak > 0` and `pasted N chars`. If silent, check Voxa's Microphone permission, macOS default input, and restart Voxa. Do not assume a permission granted to Terminal or an FFmpeg subprocess applies to the app. Login item status can be checked in System Settings → General → Login Items; enable Voxa manually if registration failed. This path has not been verified with live speech on this machine.
 
-Uninstall: `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.voxa.daemon.plist`, then remove that plist, `~/Library/Application Support/voxa`, and `~/.local/bin/voxa`. Optionally remove `~/.config/voxa` (contains your API key).
+Uninstall: quit Voxa from the menu bar, disable its login item in System Settings, remove `~/Applications/Voxa.app` and `~/.local/bin/voxa`. Optionally remove `~/.config/voxa` (contains your API key).
 
 ## Dependencies / installation (Arch/Omarchy)
 

@@ -27,7 +27,7 @@ else if (command === 'daemon') { loadKeyFile(); new Daemon().serve(); }
 else if (command === 'test-mic') {
   let bytes = 0, peak = 0;
   const mic = capture(loadConfig().audioDevice, b => { bytes += b.length; peak = Math.max(peak, audioPeak(b)); }, e => { console.error(e.message); process.exitCode = 1; });
-  setTimeout(() => { mic.kill('SIGTERM'); console.log(`Captured ${bytes} bytes of 16k mono PCM in 2 seconds; peak ${peak}`); if (!bytes) process.exitCode = 1; }, 2000);
+  setTimeout(() => { mic.stop(); console.log(`Captured ${bytes} bytes of 16k mono PCM in 2 seconds; peak ${peak}`); if (!bytes || !peak) process.exitCode = 1; }, 2000);
 } else if (command === 'test-scribe') {
   try {
     loadKeyFile();
@@ -35,8 +35,8 @@ else if (command === 'test-mic') {
     const mic = capture(loadConfig().audioDevice, b => scribe.add(b), e => console.error(e.message));
     console.log('Speak now (3 seconds)...');
     setTimeout(async () => {
-      mic.kill('SIGTERM');
-      await new Promise(resolve => mic.once('close', resolve));
+      mic.stop();
+      await mic.waitClose();
       try { console.log('Transcript:', await scribe.stop()); }
       catch (e) { console.error((e as Error).message); process.exitCode = 1; }
     }, 3000);

@@ -122,8 +122,7 @@ async function editKey(ask: Ask) {
   saveKey(key);
   console.log('API key saved.');
   if (process.platform === 'darwin') {
-    const result = run('launchctl', ['kickstart', '-k', `gui/${process.getuid!()}/com.voxa.daemon`]);
-    if (result.status !== 0) console.warn('Restart the launchd agent to apply the key (see README).');
+    console.log('Voxa.app reads the API key on the next recording.');
   } else if (available('systemctl') && run('systemctl', ['--user', 'is-active', '--quiet', 'voxa']).status === 0) {
     const result = run('systemctl', ['--user', 'restart', 'voxa']);
     if (result.status !== 0) console.warn('Restart service to apply API key: systemctl --user restart voxa');
@@ -156,8 +155,9 @@ async function editLanguage(ask: Ask) {
 }
 async function editMicrophone(ask: Ask) {
   const c = loadConfig();
-  const mic = await ask(process.platform === 'darwin' ? 'AVFoundation audio device index (default = system default; list with ffmpeg -f avfoundation -list_devices true -i "")' : 'PipeWire audio device (default = system default)', c.audioDevice);
+  const mic = await ask(process.platform === 'darwin' ? 'Microphone (Voxa.app supports only default)' : 'PipeWire audio device (default = system default)', c.audioDevice);
   if (mic === null) return false;
+  if (process.platform === 'darwin' && mic && mic !== 'default') throw Error('Voxa.app supports only the system default microphone');
   saveConfig({ ...c, audioDevice: mic || c.audioDevice });
   return true;
 }
@@ -228,7 +228,7 @@ export async function setup() {
     for (const section of ['API key', 'Language', 'Microphone', 'Stop punctuation'] as Section[]) {
       if (!await editSection(section, terminalEntry, false)) return;
     }
-    console.log('Command+Shift+R: hold to record; Command+Shift+T: toggle. Restart the launchd agent after changing the API key: launchctl kickstart -k gui/$(id -u)/com.voxa.daemon');
+    console.log('Command+Shift+R: hold to record; Command+Shift+T: toggle. Use Voxa.app menu bar Test microphone to verify peak > 0.');
     await doctor();
     return;
   }
@@ -247,14 +247,14 @@ export async function setup() {
 export async function doctor() {
   let failures = 0;
   const check = (name: string, ok: boolean, fix: string) => { console.log(`${ok ? 'OK' : 'FAIL'} ${name}${ok ? '' : ` — ${fix}`}`); if (!ok) failures++; };
-  for (const cmd of (process.platform === 'darwin' ? ['node', 'ffmpeg', 'pbcopy', 'osascript'] : ['node', 'pw-record', 'wl-copy', 'wtype', 'hyprctl'])) check(cmd, available(cmd), 'install required package (see README)');
+  for (const cmd of (process.platform === 'darwin' ? ['node', 'pbcopy', 'osascript'] : ['node', 'pw-record', 'wl-copy', 'wtype', 'hyprctl'])) check(cmd, available(cmd), 'install required package (see README)');
   check('API key', hasKey(), 'run voxa settings');
   if (hasKey()) check('API key permissions', (statSync(join(configDir(), 'env')).mode & 0o077) === 0, 'chmod 600 ~/.config/voxa/env');
   try { loadConfig(); check('config.json', true, ''); } catch (e) { check('config.json', false, (e as Error).message); }
   if (process.platform === 'darwin') {
-    check('launchd agent', run('launchctl', ['list', 'com.voxa.daemon']).status === 0, 'bash scripts/install-macos.sh');
+    check('Voxa.app', existsSync(join(homedir(), 'Applications/Voxa.app/Contents/MacOS/Voxa')), 'bash scripts/install-macos.sh');
     check('daemon socket', existsSync(join(homedir(), 'Library/Caches/voxa/voxa.sock')), 'check ~/Library/Logs/voxa.log');
-    console.log('Check Accessibility for voxa-keys and Automation for osascript in System Settings → Privacy & Security.');
+    console.log('Use Voxa.app menu bar Test microphone (peak > 0); check Microphone and Accessibility for Voxa.app in System Settings.');
   } else {
     const path = bindingsPath();
     const text = existsSync(path) ? readFileSync(path, 'utf8') : '';

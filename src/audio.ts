@@ -1,5 +1,9 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import type { Readable } from 'node:stream';
+import { spawn } from 'node:child_process';
+import { connect } from 'node:net';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+
+export type Capture = { stop(): void; waitClose(): Promise<void> };
 
 export function audioPeak(data: Buffer): number {
   let peak = 0;
@@ -7,7 +11,17 @@ export function audioPeak(data: Buffer): number {
   return peak;
 }
 
-export function capture(device: string, onData: (data: Buffer) => void, onFailure: (error: Error) => void): ChildProcessByStdio<null, Readable, Readable> {
+export function capture(device: string, onData: (data: Buffer) => void, onFailure: (error: Error) => void): Capture {
+  if (process.platform === 'darwin' && process.env.VOXA_MAC_APP === '1') {
+    if (device !== 'default') throw Error('Voxa.app currently supports the system default microphone only');
+    const mic = connect(join(homedir(), 'Library/Caches/voxa/mic.sock'));
+    let stopping = false, closed = false;
+    mic.on('close', () => { closed = true; });
+    mic.on('data', onData);
+    mic.on('error', e => { if (!stopping) onFailure(e); });
+    mic.on('end', () => { if (!stopping) onFailure(Error('Voxa.app microphone disconnected')); });
+    return { stop() { stopping = true; mic.end(); }, waitClose: () => closed ? Promise.resolve() : new Promise(resolve => mic.once('close', resolve)) };
+  }
   const mac = process.platform === 'darwin';
   const args = mac
     ? ['-hide_banner', '-loglevel', 'error', '-f', 'avfoundation', '-i', `:${device === 'default' ? 'default' : device}`, '-ac', '1', '-ar', '16000', '-f', 's16le', 'pipe:1']
@@ -19,5 +33,5 @@ export function capture(device: string, onData: (data: Buffer) => void, onFailur
   child.stdout.on('data', onData);
   child.on('error', onFailure);
   child.on('exit', (code, signal) => { if (!child.killed) onFailure(Error(`${command} exited ${code ?? signal}: ${stderr}`)); });
-  return child;
+  return { stop() { child.kill('SIGTERM'); }, waitClose: () => child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : new Promise(resolve => child.once('close', resolve)) };
 }

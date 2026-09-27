@@ -4,9 +4,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { ChildProcessByStdio } from 'node:child_process';
-import type { Readable } from 'node:stream';
-import { capture, audioPeak } from './audio.js';
+import { capture, audioPeak, type Capture } from './audio.js';
 import { Scribe } from './scribe.js';
 import { paste } from './paste.js';
 import { Osd } from './osd.js';
@@ -18,7 +16,7 @@ type State = 'idle' | 'recording' | 'committing';
 export class Daemon {
   state: State = 'idle';
   private config: Config;
-  private mic?: ChildProcessByStdio<null, Readable, Readable>;
+  private mic?: Capture;
   private scribe?: Scribe;
   private serial = 0;
   private recordingLimit?: NodeJS.Timeout;
@@ -60,16 +58,13 @@ export class Daemon {
     clearTimeout(this.recordingLimit);
     this.recordingLimit = undefined;
     const mic = this.mic;
-    mic?.kill('SIGTERM'); this.mic = undefined;
+    mic?.stop(); this.mic = undefined;
     this.osd.show('committing');
     const duration = Math.round(performance.now() - this.recordingStarted);
     const start = performance.now();
     // Drain PipeWire's last stdout frames after stopping capture before committing.
     void (async () => {
-      if (mic && mic.exitCode === null) await Promise.race([
-        new Promise<void>(resolve => mic.once('close', () => resolve())),
-        new Promise<void>(resolve => setTimeout(resolve, 250))
-      ]);
+      if (mic) await Promise.race([mic.waitClose(), new Promise<void>(resolve => setTimeout(resolve, 250))]);
       if (id !== this.serial) return;
       this.log(`recording stopped after ${duration}ms; captured ${this.audioBytes} audio bytes; peak ${this.peak}; committing...`);
       const text = await this.scribe!.stop();
@@ -86,7 +81,7 @@ export class Daemon {
     clearTimeout(this.recordingLimit);
     this.recordingLimit = undefined;
     this.osd.show('error');
-    this.mic?.kill('SIGTERM'); this.mic = undefined;
+    this.mic?.stop(); this.mic = undefined;
     this.scribe?.abort(); this.scribe = undefined;
     this.state = 'idle';
   }
@@ -116,7 +111,7 @@ export class Daemon {
     });
     server.listen(path, () => {
       chmodSync(path, 0o600); this.log('ready');
-      if (process.platform === 'darwin') {
+      if (process.platform === 'darwin' && process.env.VOXA_MAC_APP !== '1') {
         const helper = fileURLToPath(new URL('../bin/voxa-keys', import.meta.url));
         const cli = fileURLToPath(new URL('./index.js', import.meta.url));
         this.keys = spawn(helper, [process.execPath, cli], { stdio: ['ignore', 'ignore', 'inherit'] });
@@ -124,6 +119,6 @@ export class Daemon {
         this.keys.on('exit', (code, signal) => { if (code !== 0 && signal !== 'SIGTERM') this.error(Error(`keyboard helper exited ${code ?? signal}`)); });
       }
     });
-    process.on('SIGTERM', () => { clearTimeout(this.recordingLimit); this.keys?.kill(); this.osd.hide(); this.mic?.kill('SIGTERM'); this.scribe?.abort(); server.close(); try { unlinkSync(path); } catch {} process.exit(0); });
+    process.on('SIGTERM', () => { clearTimeout(this.recordingLimit); this.keys?.kill(); this.osd.hide(); this.mic?.stop(); this.scribe?.abort(); server.close(); try { unlinkSync(path); } catch {} process.exit(0); });
   }
 }
