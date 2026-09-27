@@ -3,7 +3,6 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -24,13 +23,20 @@ void osd_tick(Osd *osd) {
     memmove(osd->queue, osd->queue+1, (--osd->count)*sizeof(osd->queue[0]));
     pid_t parent = getpid(), pid = fork();
     if (!pid) {
-        child_signals(); setpgid(0, 0); prctl(PR_SET_PDEATHSIG, SIGKILL);
-        if (getppid() != parent) _exit(1);
+        child_signals(); setpgid(0, 0); parent_guard(parent, SIGKILL);
         int null = open("/dev/null", O_RDWR);
         if (null >= 0) {
             dup2(null, STDIN_FILENO); dup2(null, STDOUT_FILENO); dup2(null, STDERR_FILENO);
             if (null > STDERR_FILENO) close(null);
         }
+#ifdef __APPLE__
+        int fd = app_connect("osd.sock");
+        if (fd >= 0) {
+            char message[64]; int n = snprintf(message, sizeof(message), "%s\n", state);
+            write(fd, message, (size_t)n); close(fd);
+        }
+        _exit(0);
+#else
         if (!strcmp(state, "hide"))
             execlp("omarchy-shell", "omarchy-shell", "-q", "shell", "hide", "voxa.osd", (char *)NULL);
         else {
@@ -38,6 +44,7 @@ void osd_tick(Osd *osd) {
             execlp("omarchy-shell", "omarchy-shell", "-q", "shell", "summon", "voxa.osd", json, (char *)NULL);
         }
         _exit(127); // Optional display backend: failures never fail a dictation.
+#endif
     }
     if (pid > 0) {
         setpgid(pid, pid); osd->pid = pid; osd->deadline = now_ms()+1500;

@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
-#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -26,11 +25,10 @@ void child_signals(void) {
 }
 int run_command(char *const argv[], const char *input, unsigned timeout_ms) {
     int fds[2];
-    if (pipe2(fds, O_CLOEXEC)) return -1;
+    if (make_pipe(fds, false)) return -1;
     pid_t parent = getpid(), pid = fork();
     if (pid == 0) {
-        child_signals(); prctl(PR_SET_PDEATHSIG, SIGKILL);
-        if (getppid() != parent) _exit(1);
+        child_signals(); parent_guard(parent, SIGKILL);
         dup2(fds[0], STDIN_FILENO);
         close(fds[0]); close(fds[1]);
         int null = open("/dev/null", O_RDWR);
@@ -69,7 +67,7 @@ static int socket_address(const char *path, struct sockaddr_un *addr) {
 static int client(const char *path, const char *command) {
     struct sockaddr_un addr;
     if (socket_address(path, &addr)) return 1;
-    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    int fd = local_socket(true);
     if (fd < 0) return 1;
     int result = 1;
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 && errno != EINPROGRESS) goto out;
@@ -136,18 +134,18 @@ static int serve(const char *path, const char *test_endpoint, bool show_osd) {
     struct stat st;
     if (!lstat(path, &st)) {
         if (!S_ISSOCK(st.st_mode) || st.st_uid != getuid()) { fprintf(stderr, "voxa-c: refusing to replace non-owned socket or non-socket\n"); goto cleanup; }
-        int probe = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+        int probe = local_socket(true);
         if (probe < 0) goto cleanup;
         int connected = connect(probe, (struct sockaddr *)&addr, sizeof(addr)), saved = errno;
         close(probe);
         if (!connected || (saved != ECONNREFUSED && saved != ENOENT)) { fprintf(stderr, "voxa-c: socket is active or cannot safely be probed\n"); goto cleanup; }
         if (unlink(path)) goto cleanup;
     } else if (errno != ENOENT) goto cleanup;
-    listener = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    listener = local_socket(true);
     if (listener < 0 || bind(listener, (struct sockaddr *)&addr, sizeof(addr))) goto cleanup;
     bound = true;
     if (chmod(path, 0600) || listen(listener, 16)) goto cleanup;
-    fprintf(stderr, "[voxa-c] ready (experimental Linux daemon)\n");
+    fprintf(stderr, "[voxa-c] ready (native daemon)\n");
     while (!quitting) {
         osd_tick(&osd);
         if (worker > 0) {
@@ -167,14 +165,11 @@ static int serve(const char *path, const char *test_endpoint, bool show_osd) {
         for (size_t i = 0; i < CLIENTS; i++) fds[i+1] = (struct pollfd){clients[i].fd, POLLIN, 0};
         if (poll(fds, CLIENTS+1, 20) < 0) { if (errno == EINTR) continue; goto cleanup; }
         if (fds[0].revents & POLLIN) {
-            int fd = accept4(listener, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);
+            int fd = accept_local(listener);
             if (fd >= 0) {
-                struct ucred credentials; socklen_t n = sizeof(credentials);
                 bool accepted = false;
-                if (!getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &n) && credentials.uid == getuid()) {
-                    for (size_t i = 0; i < CLIENTS; i++) if (clients[i].fd < 0) {
-                        clients[i] = (Client){.fd = fd, .deadline = now_ms()+1000}; accepted = true; break;
-                    }
+                for (size_t i = 0; i < CLIENTS; i++) if (clients[i].fd < 0) {
+                    clients[i] = (Client){.fd = fd, .deadline = now_ms()+1000}; accepted = true; break;
                 }
                 if (!accepted) close(fd);
             }
@@ -202,15 +197,14 @@ static int serve(const char *path, const char *test_endpoint, bool show_osd) {
                 }
                 else {
                     int channel[2];
-                    if (!pipe2(channel, O_CLOEXEC | O_NONBLOCK)) {
+                    if (!make_pipe(channel, true)) {
                         pid_t parent = getpid();
                         worker = fork();
                         if (worker == 0) {
-                            setpgid(0, 0); prctl(PR_SET_PDEATHSIG, SIGTERM);
-                            if (getppid() != parent) _exit(1);
+                            setpgid(0, 0); parent_guard(parent, SIGTERM);
                             close(listener); close(lock); close(channel[1]);
                             for (size_t j = 0; j < CLIENTS; j++) if (clients[j].fd >= 0) close(clients[j].fd);
-                            int code = session_run(channel[0], &config, test_endpoint);
+                            int code = session_run(channel[0], &config, test_endpoint, false);
                             close(channel[0]); config_free(&config); curl_global_cleanup(); _exit(code);
                         }
                         close(channel[0]);
@@ -247,6 +241,12 @@ cleanup:
     return result;
 }
 int main(int argc, char **argv) {
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGTERM, signal_stop); signal(SIGINT, signal_stop);
+    if (argc > 1) {
+        int result = utilities(argc, argv);
+        if (result != -2) return result;
+    }
     const char *path = NULL, *command = NULL, *test_endpoint = NULL;
     bool show_osd = true;
     for (int i = 1; i < argc; i++) {
@@ -277,10 +277,7 @@ int main(int argc, char **argv) {
     }
     char default_path[108];
     if (!path) {
-        const char *dir = getenv("XDG_RUNTIME_DIR"); int n;
-        if (dir) n = snprintf(default_path, sizeof(default_path), "%s/voxa-c.sock", dir);
-        else n = snprintf(default_path, sizeof(default_path), "/run/user/%lu/voxa-c.sock", (unsigned long)getuid());
-        if (n < 0 || (size_t)n >= sizeof(default_path)) return 1;
+        if (runtime_path(default_path, sizeof(default_path), "voxa.sock")) return 1;
         path = default_path;
     }
     signal(SIGPIPE, SIG_IGN);
@@ -295,5 +292,6 @@ int main(int argc, char **argv) {
     int result = serve(path, test_endpoint, show_osd);
     curl_global_cleanup(); return result;
 usage:
-    fprintf(stderr, "Usage: voxa-c [--socket PATH] [--no-osd] daemon|status|start|stop|toggle|test-osd\n"); return 2;
+    fprintf(stderr, "Usage: voxa [--socket PATH] [--no-osd] daemon|status|start|stop|toggle|test-osd\n"
+        "       voxa setup|settings [--terminal]|doctor|test-mic|test-scribe|test-paste TEXT\n"); return 2;
 }

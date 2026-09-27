@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int config_path(char *out, size_t size, const char *file) {
+int config_path(char *out, size_t size, const char *file) {
     const char *xdg = getenv("XDG_CONFIG_HOME"), *home = getenv("HOME");
     int n;
     if (xdg && *xdg) n = snprintf(out, size, "%s/voxa/%s", xdg, file);
@@ -61,6 +61,11 @@ static int load_key(Config *c, unsigned index) {
     return 0;
 }
 int config_load(Config *c, unsigned key_index) {
+    if (config_read(c)) return -1;
+    if (load_key(c, key_index)) { config_free(c); return -1; }
+    return 0;
+}
+int config_read(Config *c) {
     memset(c, 0, sizeof(*c));
     char path[4096];
     if (config_path(path, sizeof(path), "config.json")) return -1;
@@ -119,7 +124,6 @@ int config_load(Config *c, unsigned key_index) {
     v = json_object_object_get(c->json, "pasteCommand");
     if (!string_ok(v) || strcmp(json_object_get_string(v), "wtype")) goto invalid;
     c->punctuation = json_object_get_boolean(json_object_object_get(c->json, "stopPunctuation"));
-    if (load_key(c, key_index)) goto invalid;
     return 0;
 invalid:
     config_free(c);
@@ -127,7 +131,7 @@ invalid:
 }
 void config_free(Config *c) {
     if (c->json) json_object_put(c->json);
-    explicit_bzero(c->key, sizeof(c->key));
+    secure_clear(c->key, sizeof(c->key));
     memset(c, 0, sizeof(*c));
 }
 static int query_add(CURL *curl, char **url, const char *name, const char *value) {

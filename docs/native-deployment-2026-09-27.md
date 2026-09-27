@@ -1,5 +1,7 @@
 # Native daemon + OSD deployment — 2026-09-27
 
+> Historical record for commit `3b9eeb3`, not current installation instructions. The backend is now C-only; see [migration](migration.md). Old paths and rollback commands below describe that earlier deployment.
+
 ## Completed
 
 - Added native parent-side asynchronous OSD queue: `recording`, `committing`, `done`, `error`, `hide`; bounded backlog and 1.5s command timeout. Empty transcript and graceful shutdown hide the overlay. Display failure does not block recording/typing.

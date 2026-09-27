@@ -1,83 +1,137 @@
-# Voxa for Omarchy and macOS
+# Voxa
 
-Hold F10 to record and release to transcribe, or press F11 once to record and again to transcribe. Voxa types directly with `wtype` on Omarchy without touching the clipboard. On macOS it temporarily uses the system clipboard, then restores its previous contents. Omarchy and the macOS app show a focus-free recording/transcribing OSD. There is no idle microphone capture, transcript persistence, or LLM. Logs omit transcripts unless `debug` is enabled. macOS snapshots all readable pasteboard item types and restores after a 250 ms grace period, unless another copy changed the clipboard. This delay is best-effort, not confirmation that the target app consumed the paste; unusually slow apps may need longer. Clipboard history tools may still capture the temporary transcript.
+Voice dictation for **Omarchy and macOS**, powered by a native **C daemon and CLI**. Start recording with a shortcut, speak, then stop to insert text into the focused app.
 
-## macOS (experimental)
+Requires an internet connection and an **ElevenLabs API key with Speech to Text access**. Audio is streamed to ElevenLabs; transcription is not offline. No Node.js or npm is required.
 
-Requires macOS 13+, Node.js 22+, Xcode Command Line Tools, and an ElevenLabs key with **Speech to Text** access. The app captures audio **in its own process** using AVAudioEngine (not an FFmpeg child); Node receives 16 kHz mono PCM via a private local socket. Install from a Terminal once:
+| Platform | Hold to record | Toggle recording | Text insertion |
+|---|---|---|---|
+| Omarchy | F10 | F11 | Direct typing; clipboard untouched |
+| macOS (experimental) | Command+Shift+R | Command+Shift+T | Paste, then best-effort clipboard restoration |
+
+## Quick start: Omarchy
+
+Requires Hyprland, PipeWire, a C11 compiler, make, pkg-config, json-c and **libcurl with WebSocket (`wss`) support**.
 
 ```sh
+# Arch: install missing packages
+sudo pacman -S base-devel curl json-c pipewire wtype
+
+# Run from this repository
+bash scripts/install.sh
+voxa setup
+voxa doctor
+```
+
+`voxa setup` runs in a terminal: enter your API key, choose language/microphone/punctuation and shortcuts, then enable the user service. Keys are hidden during input and saved with mode `600`. Existing config and keys are preserved. Shortcut changes back up `bindings.lua` and reject conflicting custom bindings.
+
+To try it, focus a **disposable text editor**, hold F10, speak, then release. Keep the editor focused until text appears. F11 starts/stops the same recording; use one mode at a time. **Newlines may act as Enter**, including submitting a chat or terminal command.
+
+The installer installs C directly, optionally enables the Omarchy OSD plugin, and upgrades an existing installation only while idle. [Migration and backups](docs/migration.md).
+
+## Quick start: macOS (experimental)
+
+Requires macOS 13+, Xcode Command Line Tools, json-c and a WebSocket-enabled libcurl. With Homebrew:
+
+```sh
+brew install curl json-c pkg-config
 bash scripts/install-macos.sh
 ```
 
-The installer creates `~/Applications/Voxa.app`, removes the old launchd agent, opens the app and registers it as a login item. Click **Voxa → Set ElevenLabs API Key…** in the menu bar to enter 1–5 keys securely, separated by commas; the next recording uses the updated keys without restarting. Leave the field blank to keep saved keys. You can also use `~/.local/bin/voxa setup` from Terminal for the other settings. Grant **Microphone** and **Accessibility** to `~/Applications/Voxa.app` in System Settings → Privacy & Security. If shortcuts are not active yet, use **Enable / Retry Shortcuts** in the menu bar after granting Accessibility. Grant Automation to System Events when prompted for paste. Hold **Command+Shift+R** to record; **Command+Shift+T** toggles. Voxa consumes these shortcuts and shows a non-interactive OSD on the current screen while recording/transcribing; success and errors disappear after 1.3 seconds. Only the system default microphone is supported; change the default in macOS Sound settings. Other `voxa settings` options are terminal-only.
+The installer builds `~/Applications/Voxa.app`. Its Swift shell captures audio in the app process, owns shortcuts and displays the OSD; the C daemon handles transcription and the CLI. No JavaScript runtime is bundled or launched.
 
-**Verify the actual app path:** click Voxa in the menu bar → **Test microphone (speak for 2 seconds)**. The menu bar must show `mic OK (peak N)` with **N > 0**. A successful `voxa test-mic` from Terminal does *not* establish that the app path works. Then speak with the shortcut and check `~/Library/Logs/voxa.log` for `peak > 0` and `pasted N chars`. If silent, check Voxa's Microphone permission, macOS default input, and restart Voxa. Do not assume a permission granted to Terminal or an FFmpeg subprocess applies to the app. Login item status can be checked in System Settings → General → Login Items; enable Voxa manually if registration failed. This path has not been verified with live speech on this machine.
+1. In the Voxa menu bar, choose **Set ElevenLabs API Key…**.
+2. Grant **Microphone** and **Accessibility** to Voxa.app in System Settings → Privacy & Security. Allow Automation for System Events when prompted for paste.
+3. Choose **Enable / Retry Shortcuts**, then **Test microphone (speak for 2 seconds)**. Expect `mic OK (peak N)` with `N > 0`.
+4. Focus a disposable editor and try Command+Shift+R.
 
-Uninstall: quit Voxa from the menu bar, disable its login item in System Settings, remove `~/Applications/Voxa.app` and `~/.local/bin/voxa`. Optionally remove `~/.config/voxa` (contains your API key).
+Only the system default microphone is supported. `voxa settings` provides terminal settings; shortcuts are fixed on macOS. The app registers itself as a login item. Logs: `~/Library/Logs/voxa.log`.
 
-## Dependencies / installation (Arch/Omarchy)
+**The new C/macOS path has not been built or live-tested on this Linux development machine.** See [macOS notes](docs/macos.md) before relying on it.
 
-Requires Node.js 22+, `npm`, PipeWire (`pw-record`), `wtype`, and Hyprland. On Arch, install missing packages with `sudo pacman -S nodejs npm pipewire wtype`.
-
-```sh
-bash scripts/install.sh
-voxa setup                  # interactive wizard: key, shortcuts, language, microphone, service
-voxa doctor                 # checks dependencies, config, bindings and service
-voxa settings               # choose API key, Hold shortcut, Toggle shortcut, language or microphone
-# Optional GUI/shortcut recorder dependencies: sudo pacman -S zenity python-gobject gtk4
-voxa status
-```
-
-**ElevenLabs API keys:** Enable **Speech to Text** access for each key. Enter 1–5 keys separated by commas in `voxa setup` or **API key** in `voxa settings`. Leave blank to keep the existing keys. Voxa cycles through the keys in order, one per recording (not random); a single key still works. You can also set `ELEVENLABS_API_KEY=key1,key2,key3` in `~/.config/voxa/env` (permissions `600`). This does not increase the quota if the keys share an ElevenLabs account.
-
-The installer installs the user service and enables the Omarchy Shell OSD plugin when available. Run `voxa setup` to save the key securely, enable the service, and manage shortcuts in `~/.config/hypr/bindings.lua` (backed up to `bindings.lua.voxa.bak`). Conflicting custom bindings are not overwritten. Later, use `voxa settings` to change individual options; `voxa settings --terminal` forces the terminal menu. The installer does not overwrite existing config or key files. Never put credentials in `config.json`, shell history, or this repository.
-
-## Try each part
+## Commands
 
 ```sh
-voxa test-mic             # 2 seconds; byte count, no saved audio
-voxa test-scribe          # 3 seconds; reads key file, prints committed transcript, no paste
-voxa test-paste 'hello สวัสดี'  # pastes into focused app; test with a disposable field!
-voxa toggle; sleep 3; voxa toggle  # or: voxa start; sleep 3; voxa stop
-journalctl --user -u voxa -f
+voxa settings                    # terminal settings menu
+voxa status                      # idle / recording / committing
+voxa start                       # opens mic and connects to ElevenLabs
+voxa stop                        # finishes transcription and inserts text
+voxa toggle                      # start or stop
+voxa doctor                      # local dependency/config/service checks
+voxa test-mic                    # records 2 seconds; prints byte count and peak
+voxa test-scribe                 # records 3 seconds; prints transcript, no insertion
+voxa test-paste 'hello สวัสดี'     # inserts into focused app — use a disposable field
+voxa test-osd                    # display-only preview; no mic/API/insertion
 ```
 
-Press F11 again to stop recording, or release F10 in hold mode. Empty transcripts are not pasted; errors are logged with `journalctl --user -u voxa -f`.
-
-## Omarchy binding
-
-`voxa setup` manages a marked block in your `~/.config/hypr/bindings.lua`. F10 holds to record; F11 toggles recording. Both shortcuts control the same recording, so use one mode at a time. Remove conflicting bindings first. Change keys with `voxa settings`: use the GUI shortcut recorder (requires GTK4/PyGObject) or type a shortcut manually. Standalone modifier keys may not fire reliable release events in hold mode; choose a non-modifier key. `hypr/voxa.lua` is a manual reference.
+`test-scribe` sends audio to ElevenLabs and uses quota. `test-paste` does not wait for you to focus another app. `test-osd` shares the real overlay; do not run during dictation. Empty transcripts are not inserted. Toggles during transcription are ignored.
 
 ## Configuration
 
-Use `voxa settings` or edit `~/.config/voxa/config.json` (see `config.example.json`). Changes apply on next recording; changing the API key restarts the service. Default is `language: "th"`, `secondaryLanguages: ["en"]`; for automatic detection set `language: null`, `secondaryLanguages: []` and compare results for Thai/English code switching. `keyterms` biases technical terms. `stopPunctuation: false` (default) removes a final full stop (`.` or `。`) from the transcript; set it to `true` to keep it. Internal punctuation and question marks are unchanged. This is also available in `voxa settings`. `pasteCommand` is retained for Linux compatibility (`wtype`); macOS uses a native pasteboard helper and `osascript` regardless of this setting. Reinstall the macOS app to build the helper; for development, run `swiftc -O mac/paste.swift -framework AppKit -o dist/voxa-paste` after `npm run build`. `debug: true` logs transcript text; leave false for privacy. ElevenLabs may retain request data per your account's policy.
+Use `voxa settings` or edit `${XDG_CONFIG_HOME:-~/.config}/voxa/config.json` ([example](config.example.json)). Changes apply on the next recording.
 
-On Omarchy, set `audioDevice` to a PipeWire source name or ID from `wpctl status` (or leave `default`). Focus must remain in the destination during transcription; Voxa does not restore focus.
+| Setting | Default | Meaning |
+|---|---|---|
+| `language` | `"th"` | Primary language; `null` for automatic detection |
+| `secondaryLanguages` | `["en"]` | Additional languages; use `[]` with auto detection |
+| `audioDevice` | `"default"` | PipeWire source name/ID from `wpctl status`; macOS supports only `default` |
+| `keyterms` | `[]` | Technical terms to bias transcription |
+| `stopPunctuation` | `false` | Remove a final `.` or `。`; `true` keeps it |
+| `debug` | `false` | Accepted for compatibility; C never logs transcript text |
+| `pasteCommand` | `"wtype"` | Compatibility field; must remain `wtype`. macOS uses its native paste helper |
 
-## Troubleshooting (Omarchy)
+**API keys:** enter 1–5 comma-separated keys in settings. Voxa rotates sequentially, one key per recording. This does not increase quota for keys sharing an account. Keys are read from `voxa/env` each recording; a nonempty `ELEVENLABS_API_KEY` environment variable overrides that file. Never put credentials in `config.json`, shell history or the repository.
 
-- Microphone: run `voxa test-mic`, `wpctl status`, and `systemctl --user status pipewire wireplumber`.
-- Text insertion: check `WAYLAND_DISPLAY` and `command -v wtype`, then run `voxa test-paste` in a disposable focused field. Omarchy uses direct typing, not Ctrl+V; test Thai/English in your target apps. Newlines may act as Enter and submit a chat or terminal command. On macOS, check Automation permission for System Events and reinstall if the paste helper is missing.
-- OSD: check `omarchy-shell shell listPlugins` for an enabled `voxa.osd`; run `omarchy-shell shell rescanPlugins` if needed.
-- Shortcuts: check `hyprctl binds -j`. The user systemd manager needs `WAYLAND_DISPLAY` and `PATH` imported (normally handled by Omarchy); inspect with `systemctl --user show-environment`.
+## Privacy and limits
+
+- Microphone capture only while recording; no saved audio or transcript files.
+- Logs contain state/errors/timings, not keys or transcript text. `test-scribe` explicitly prints its transcript.
+- ElevenLabs data retention depends on your account policy.
+- Omarchy uses `wtype` without reading/writing the clipboard.
+- macOS snapshots readable clipboard types, pastes, then restores after 250 ms unless another copy changed it. Restoration is best-effort; slow apps may miss the paste and clipboard history tools may retain the temporary transcript.
+- Recordings are limited to **60 seconds**; exceeding the limit cancels the session. Insertion has a two-second timeout. Focus is not restored automatically.
+- Offline integration tests use mocks. They do not prove real ElevenLabs transcription quality or compatibility with every target app.
+
+## Troubleshooting
+
+**Omarchy:**
+
+- Service/logs: `systemctl --user status voxa`, `journalctl --user -u voxa -f`.
+- Microphone: `voxa test-mic`, `wpctl status`, `systemctl --user status pipewire wireplumber`.
+- Insertion: check `WAYLAND_DISPLAY` and `command -v wtype`. The service needs the graphical session environment; inspect `systemctl --user show-environment`.
+- Shortcuts: `hyprctl binds -j`; change them with `voxa settings`. Standalone modifier keys are not supported as hold shortcuts.
+- OSD: check `omarchy-shell shell listPlugins` for `voxa.osd`. Display failure does not stop dictation.
+- `libcurl requires WSS support`: install a libcurl build with WebSocket support and rebuild.
+
+**macOS:** use the app's microphone test, not a permission previously granted to Terminal. See [macOS diagnostics](docs/macos.md).
 
 ## Uninstall
 
+Omarchy (adjust `~/.config` if you use `XDG_CONFIG_HOME`):
+
 ```sh
 systemctl --user disable --now voxa
-rm -f ~/.config/systemd/user/voxa.service ~/.local/bin/voxa
+rm -f ~/.config/systemd/user/voxa.service
+rm -f ~/.config/systemd/user/voxa.service.d/{80-config,90-native}.conf
+rm -f ~/.local/bin/voxa
 rm -rf ~/.local/share/voxa
-omarchy plugin disable voxa.osd  # optional if Omarchy Shell is running
-rm -rf ~/.config/omarchy/plugins/voxa.osd
-omarchy-shell shell rescanPlugins  # optional if Omarchy Shell is running
 systemctl --user daemon-reload
 # Remove the managed Voxa block from ~/.config/hypr/bindings.lua; hyprctl reload
-# Optional: rm -rf ~/.config/voxa (includes your private key)
+# Optional: omarchy plugin disable voxa.osd
+# Optional: remove ~/.config/omarchy/plugins/voxa.osd, then rescan plugins
+# Optional: remove ~/.config/voxa (includes API keys) and ~/.local/share/voxa-backups
 ```
 
-Development: `npm ci && npm test`. `voxa doctor` checks local setup; use `voxa test-scribe` to test transcription with a valid ElevenLabs key.
+macOS: quit Voxa, disable its login item, remove `~/Applications/Voxa.app` and `~/.local/bin/voxa`. Optionally remove `~/.config/voxa` (includes keys).
 
-Performance: [benchmark results and optimization experiments (2026-09-27)](docs/benchmarks/2026-09-27.md) include Node/Python/C control clients and PipeWire startup measurements. Run `python3 bench/control-latency.py` after building for a read-only `status` benchmark (requires a running daemon and C compiler).
+## Development
 
-Experimental Linux C daemon: see [`native/README.md`](native/README.md) for build/run instructions, tests, OSD and Node-vs-C idle benchmarks. `make -C native` builds a standalone daemon with a separate socket. To switch an existing Linux service and shortcuts, run `bash scripts/use-native.sh`; it preserves Node, backs up the launcher and prints a rollback command. Recording/transcription/direct typing and the Omarchy OSD are supported; macOS is not. `voxa test-osd` previews native display states without recording. Live ElevenLabs and target-app behavior still need verification; integration tests use mocks.
+```sh
+make                             # C daemon + CLI → native/voxa
+make test                        # offline tests; Python 3 standard library, Linux
+make sanitize                    # AddressSanitizer + UndefinedBehaviorSanitizer tests
+make clean all                   # restore release build
+python3 native/bench-daemon.py    # isolated status-only benchmark; no mic/API
+```
+
+[C architecture and standalone usage](native/README.md). Python is only needed for tests/benchmarks, not installation or normal use. macOS UI and paste helper remain Swift; all former Node responsibilities are in C. Terminal settings replace the old GUI settings/shortcut recorder.

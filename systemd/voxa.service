@@ -5,8 +5,8 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-EnvironmentFile=%h/.config/voxa/env
-ExecStart=/usr/bin/env node %h/.local/share/voxa/dist/index.js daemon
+# The daemon reads the key file at the beginning of every recording.
+ExecStart=%h/.local/share/voxa/voxa daemon
 Restart=on-failure
 RestartSec=2
 

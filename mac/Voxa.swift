@@ -4,7 +4,7 @@ import ApplicationServices
 import ServiceManagement
 import Darwin
 
-// Microphone capture lives in this app process, not in ffmpeg or the Node child: TCC grants the app itself.
+// Microphone capture lives in this app process, not the C daemon: TCC grants the app itself.
 final class Voxa: NSObject, NSApplicationDelegate {
     private var server: Int32 = -1
     private var osdServer: Int32 = -1
@@ -13,8 +13,8 @@ final class Voxa: NSObject, NSApplicationDelegate {
     private var client: Int32 = -1
     private var ownsSocket = false
     private var engine: AVAudioEngine?
-    private var node: Process?
-    private var nodeExecutable = ""
+    private var daemon: Process?
+    private var daemonExecutable = ""
     private var eventTap: CFMachPort?
     private var holding = false
     private let commands = DispatchQueue(label: "voxa.shortcuts")
@@ -90,13 +90,12 @@ final class Voxa: NSObject, NSApplicationDelegate {
         }
         signal(SIGPIPE, SIG_IGN)
         let resources = Bundle.main.resourceURL!
-        let executable = try String(contentsOf: resources.appendingPathComponent("node-path"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        nodeExecutable = executable
+        let executable = resources.appendingPathComponent("bin/voxa").path
+        daemonExecutable = executable
         let task = Process()
         task.executableURL = URL(fileURLWithPath: executable)
-        task.arguments = [resources.appendingPathComponent("dist/index.js").path, "daemon"]
+        task.arguments = ["daemon"]
         var env = ProcessInfo.processInfo.environment
-        env["VOXA_MAC_APP"] = "1"
         env["PATH"] = URL(fileURLWithPath: executable).deletingLastPathComponent().path + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         task.environment = env
         let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/voxa.log")
@@ -111,7 +110,7 @@ final class Voxa: NSObject, NSApplicationDelegate {
             }
         }
         try task.run()
-        node = task
+        daemon = task
         enableShortcuts()
         DispatchQueue.global(qos: .userInitiated).async {
             while self.server >= 0 {
@@ -293,12 +292,11 @@ final class Voxa: NSObject, NSApplicationDelegate {
             else if type == .keyDown && matched && !holding && !repeated { holding = true; command = "start" }
         } else if code == 17 && matched && type == .keyDown && !repeated { command = "toggle" }
         if let command {
-            let executable = nodeExecutable
-            let cli = Bundle.main.resourceURL!.appendingPathComponent("dist/index.js").path
+            let executable = daemonExecutable
             commands.async {
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: executable)
-                task.arguments = [cli, command]
+                task.arguments = [command]
                 task.standardOutput = FileHandle.nullDevice
                 task.standardError = FileHandle.nullDevice
                 do { try task.run(); task.waitUntilExit() }
@@ -353,13 +351,10 @@ final class Voxa: NSObject, NSApplicationDelegate {
     }
 
     @objc private func testMic() {
-        guard !nodeExecutable.isEmpty else { return }
+        guard !daemonExecutable.isEmpty else { return }
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: nodeExecutable)
-        task.arguments = [Bundle.main.resourceURL!.appendingPathComponent("dist/index.js").path, "test-mic"]
-        var env = ProcessInfo.processInfo.environment
-        env["VOXA_MAC_APP"] = "1"
-        task.environment = env
+        task.executableURL = URL(fileURLWithPath: daemonExecutable)
+        task.arguments = ["test-mic"]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = pipe
@@ -379,7 +374,7 @@ final class Voxa: NSObject, NSApplicationDelegate {
     @objc private func quit() { NSApp.terminate(nil) }
     func applicationWillTerminate(_ notification: Notification) {
         if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false) }
-        node?.terminate()
+        daemon?.terminate()
         if client >= 0 { shutdown(client, SHUT_RDWR) }
         osdTimer?.invalidate()
         if osdServer >= 0 { close(osdServer); osdServer = -1; try? FileManager.default.removeItem(at: osdURL) }

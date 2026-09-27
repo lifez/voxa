@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -24,29 +23,6 @@ typedef struct {
     double commit_time;
 } Stream;
 
-static pid_t microphone(const char *device, int *output) {
-    int pipefd[2];
-    if (pipe2(pipefd, O_CLOEXEC)) return -1;
-    pid_t parent = getpid(), pid = fork();
-    if (pid == 0) {
-        child_signals();
-        prctl(PR_SET_PDEATHSIG, SIGKILL);
-        if (getppid() != parent) _exit(1);
-        dup2(pipefd[1], STDOUT_FILENO);
-        int null = open("/dev/null", O_RDWR);
-        if (null >= 0) { dup2(null, STDIN_FILENO); dup2(null, STDERR_FILENO); close(null); }
-        close(pipefd[0]); close(pipefd[1]);
-        if (!strcmp(device, "default"))
-            execlp("pw-record", "pw-record", "--rate", "16000", "--channels", "1", "--format", "s16", "--raw", "--latency", "100ms", "-", (char *)NULL);
-        else
-            execlp("pw-record", "pw-record", "--rate", "16000", "--channels", "1", "--format", "s16", "--raw", "--latency", "100ms", "--target", device, "-", (char *)NULL);
-        _exit(127);
-    }
-    close(pipefd[1]);
-    if (pid < 0) { close(pipefd[0]); return -1; }
-    *output = pipefd[0]; nonblock(*output);
-    return pid;
-}
 static char *base64(const unsigned char *data, size_t n) {
     static const char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     char *out = malloc(4 * ((n + 2) / 3) + 1);
@@ -121,7 +97,7 @@ static int receive(CURL *curl, Stream *s, char **text) {
     return 0;
 }
 
-int session_run(int control, Config *config, const char *test_endpoint) {
+int session_run(int control, Config *config, const char *test_endpoint, bool print_only) {
     int result = 1, micfd = -1;
     pid_t mic = -1;
     CURL *curl = curl_easy_init();
@@ -139,7 +115,7 @@ int session_run(int control, Config *config, const char *test_endpoint) {
     char header[4120];
     snprintf(header, sizeof(header), "xi-api-key: %s", config->key);
     headers = curl_slist_append(NULL, header);
-    explicit_bzero(header, sizeof(header));
+    secure_clear(header, sizeof(header));
     if (!headers) goto cleanup;
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
@@ -152,7 +128,7 @@ int session_run(int control, Config *config, const char *test_endpoint) {
     // No redirects, endpoint override or insecure TLS in the production binary.
     if (curl_multi_add_handle(multi, curl) != CURLM_OK) goto cleanup;
     added = true;
-    mic = microphone(config->device, &micfd);
+    mic = microphone_start(config->device, &micfd);
     if (mic < 0) { error = "cannot start microphone"; goto cleanup; }
     nonblock(control);
     fprintf(stderr, "[voxa-c] recording started\n");
@@ -168,7 +144,7 @@ int session_run(int control, Config *config, const char *test_endpoint) {
         if (count < 0 && errno != EAGAIN && errno != EINTR) goto cleanup;
         if (count > 0 && !stopping) {
             stopping = true; stopped = now;
-            kill(mic, SIGTERM);
+            microphone_stop(mic, micfd);
         }
         if (micfd >= 0) {
             unsigned char data[8192];
@@ -189,7 +165,8 @@ int session_run(int control, Config *config, const char *test_endpoint) {
         }
         if (stopping && !drained && now-stopped >= 250) {
             if (micfd >= 0) { close(micfd); micfd = -1; }
-            kill(mic, SIGKILL); drained = true; drained_at = now_ms();
+            if (mic > 0) kill(mic, SIGKILL);
+            drained = true; drained_at = now_ms();
         }
         if (!connected) {
             int running = 0, remaining;
@@ -211,11 +188,11 @@ int session_run(int control, Config *config, const char *test_endpoint) {
                 double transcript_at = now_ms();
                 format_transcript(text, config->punctuation);
                 if (!transcript_blank(text)) {
-                    // Match current Linux Node backend: stdin keeps text out of
-                    // argv and direct typing leaves the clipboard untouched.
-                    char *type[] = {"wtype", "-", NULL};
-                    if (run_command(type, text, 2000)) { error = "text insertion failed"; goto cleanup; }
-                    fprintf(stderr, "[voxa-c] inserted %zu UTF-8 bytes\n", strlen(text));
+                    if (print_only) puts(text);
+                    else {
+                        if (insert_text(text)) { error = "text insertion failed"; goto cleanup; }
+                        fprintf(stderr, "[voxa-c] inserted %zu UTF-8 bytes\n", strlen(text));
+                    }
                 } else fprintf(stderr, "[voxa-c] empty transcript; nothing pasted\n");
                 fprintf(stderr, "[voxa-c] timing first_pcm_ms=%.2f session_ready_ms=%.2f drain_ms=%.2f commit_to_transcript_ms=%.2f stop_to_transcript_ms=%.2f typing_ms=%.2f stop_to_done_ms=%.2f audio_bytes=%zu\n",
                         first_pcm, ready_at, drained_at-stopped, transcript_at-stream->commit_time,
@@ -247,8 +224,7 @@ int session_run(int control, Config *config, const char *test_endpoint) {
     }
     error = "session cancelled";
 cleanup:
-    if (micfd >= 0) close(micfd);
-    if (mic > 0) { kill(mic, SIGKILL); while (waitpid(mic, NULL, 0) < 0 && errno == EINTR) {} }
+    microphone_cleanup(mic, micfd);
     if (result == 1) fprintf(stderr, "[voxa-c] %s\n", error);
     if (added) curl_multi_remove_handle(multi, curl);
     if (curl) curl_easy_cleanup(curl);

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Compare idle Node/C daemons on isolated sockets; never record or use an API key.
-Prerequisites: npm run build && make -C native
+"""Measure the native daemon on an isolated socket; never record or use an API key.
+Prerequisites: make
 """
 import json
 import math
@@ -50,6 +50,8 @@ def cli(command, env):
 
 
 def rss(pid):
+    if platform.system() != 'Linux':
+        return None
     for line in pathlib.Path(f'/proc/{pid}/status').read_text().splitlines():
         if line.startswith('VmRSS:'):
             return int(line.split()[1])
@@ -67,9 +69,8 @@ def main():
         env = {**os.environ, 'XDG_RUNTIME_DIR': temp, 'XDG_CONFIG_HOME': temp,
                'PATH': str(mock_bin) + os.pathsep + os.environ.get('PATH', '')}
         env.pop('ELEVENLABS_API_KEY', None)
-        commands = {'node': ['node', str(ROOT / 'dist/index.js')],
-                    'c': [str(ROOT / 'native/voxa-c')]}
-        paths = {'node': pathlib.Path(temp) / 'voxa.sock', 'c': pathlib.Path(temp) / 'voxa-c.sock'}
+        paths = {'c': pathlib.Path(temp) / 'voxa.sock'}
+        commands = {'c': [str(ROOT / 'native/voxa'), '--no-osd', '--socket', str(paths['c'])]}
         try:
             for name, command in commands.items():
                 process = subprocess.Popen(command + ['daemon'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -80,9 +81,7 @@ def main():
                         raise RuntimeError(f'{name} daemon failed to start')
                     time.sleep(.01)
             functions = {
-                'node_socket': lambda: status(paths['node']),
                 'c_socket': lambda: status(paths['c']),
-                'node_cli': lambda: cli(commands['node'], env),
                 'c_cli': lambda: cli(commands['c'], env),
             }
             for function in functions.values():
@@ -97,7 +96,6 @@ def main():
                     values[name].append(functions[name]())
             print(json.dumps({
                 'platform': platform.platform(),
-                'node': subprocess.check_output(['node', '-v'], text=True).strip(),
                 'method': 'isolated idle daemons; 5 warmups; 100 shuffled rounds; status only; no mic/API/clipboard',
                 'results': {name: summary(a) for name, a in values.items()},
                 'idle_rss_kib': {name: rss(process.pid) for name, process in zip(commands, daemons)},
