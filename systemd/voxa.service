@@ -1,0 +1,14 @@
+[Unit]
+Description=Push-to-talk Voxa dictation
+After=graphical-session.target pipewire.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/voxa/env
+ExecStart=/usr/bin/env node %h/.local/share/voxa/dist/index.js daemon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

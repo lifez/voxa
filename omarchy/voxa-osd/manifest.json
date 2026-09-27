@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "voxa.osd",
+  "name": "Voxa dictation OSD",
+  "version": "1.0.0",
+  "author": "Local",
+  "description": "Focus-free push-to-talk recording status",
+  "kinds": ["panel"],
+  "keepLoaded": true,
+  "entryPoints": { "panel": "Osd.qml" }
+}

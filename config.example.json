@@ -1,0 +1,9 @@
+{
+  "language": "th",
+  "secondaryLanguages": ["en"],
+  "audioDevice": "default",
+  "keyterms": ["GraphQL", "SchemaLink", "Apollo", "Sequelize", "Drizzle", "ClickHouse", "Cloud Run", "GKE", "Pub/Sub", "Redis", "Valkey", "Kubernetes", "Helm", "Terraform", "Vitest", "DataLoader", "resolver", "migration", "monorepo", "N+1"],
+  "pasteCommand": "wtype",
+  "debug": false,
+  "stopPunctuation": false
+}
