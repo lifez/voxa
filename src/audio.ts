@@ -1,6 +1,12 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 
+export function audioPeak(data: Buffer): number {
+  let peak = 0;
+  for (let i = 0; i + 1 < data.length; i += 2) peak = Math.max(peak, Math.abs(data.readInt16LE(i)));
+  return peak;
+}
+
 export function capture(device: string, onData: (data: Buffer) => void, onFailure: (error: Error) => void): ChildProcessByStdio<null, Readable, Readable> {
   const mac = process.platform === 'darwin';
   const args = mac

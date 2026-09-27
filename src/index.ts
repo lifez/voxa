@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { Daemon, socketPath } from './daemon.js';
-import { capture } from './audio.js';
+import { capture, audioPeak } from './audio.js';
 import { paste } from './paste.js';
 import { Scribe } from './scribe.js';
 import { loadConfig } from './config.js';
@@ -25,9 +25,9 @@ else if (command === 'settings') settings(args[0] !== '--terminal').catch(e => {
 else if (command === 'doctor') doctor().catch(e => { console.error(`voxa: ${e.message}`); process.exitCode = 1; });
 else if (command === 'daemon') { loadKeyFile(); new Daemon().serve(); }
 else if (command === 'test-mic') {
-  let bytes = 0;
-  const mic = capture(loadConfig().audioDevice, b => { bytes += b.length; }, e => { console.error(e.message); process.exitCode = 1; });
-  setTimeout(() => { mic.kill('SIGTERM'); console.log(`Captured ${bytes} bytes of 16k mono PCM in 2 seconds`); if (!bytes) process.exitCode = 1; }, 2000);
+  let bytes = 0, peak = 0;
+  const mic = capture(loadConfig().audioDevice, b => { bytes += b.length; peak = Math.max(peak, audioPeak(b)); }, e => { console.error(e.message); process.exitCode = 1; });
+  setTimeout(() => { mic.kill('SIGTERM'); console.log(`Captured ${bytes} bytes of 16k mono PCM in 2 seconds; peak ${peak}`); if (!bytes) process.exitCode = 1; }, 2000);
 } else if (command === 'test-scribe') {
   try {
     loadKeyFile();

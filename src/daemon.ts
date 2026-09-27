@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
-import { capture } from './audio.js';
+import { capture, audioPeak } from './audio.js';
 import { Scribe } from './scribe.js';
 import { paste } from './paste.js';
 import { Osd } from './osd.js';
@@ -22,6 +22,9 @@ export class Daemon {
   private scribe?: Scribe;
   private serial = 0;
   private recordingLimit?: NodeJS.Timeout;
+  private recordingStarted = 0;
+  private audioBytes = 0;
+  private peak = 0;
   private osd = new Osd();
   private keys?: ChildProcess;
   constructor() { this.config = loadConfig(); }
@@ -34,7 +37,10 @@ export class Daemon {
       const id = ++this.serial;
       this.scribe = new Scribe(this.config, e => { if (id === this.serial) this.fail(e); });
       this.state = 'recording';
-      this.mic = capture(this.config.audioDevice, b => { if (id === this.serial && (this.state === 'recording' || this.state === 'committing')) this.scribe?.add(b); }, e => { if (id === this.serial && this.state === 'recording') this.fail(e); });
+      this.recordingStarted = performance.now();
+      this.audioBytes = 0;
+      this.peak = 0;
+      this.mic = capture(this.config.audioDevice, b => { if (id === this.serial && (this.state === 'recording' || this.state === 'committing')) { this.audioBytes += b.length; this.peak = Math.max(this.peak, audioPeak(b)); this.scribe?.add(b); } }, e => { if (id === this.serial && this.state === 'recording') this.fail(e); });
       this.recordingLimit = setTimeout(() => {
         if (id === this.serial && this.state === 'recording') this.fail(Error('recording exceeded 60 seconds; stopped for safety'));
       }, 60_000);
@@ -56,7 +62,7 @@ export class Daemon {
     const mic = this.mic;
     mic?.kill('SIGTERM'); this.mic = undefined;
     this.osd.show('committing');
-    this.log('recording stopped; committing...');
+    const duration = Math.round(performance.now() - this.recordingStarted);
     const start = performance.now();
     // Drain PipeWire's last stdout frames after stopping capture before committing.
     void (async () => {
@@ -65,6 +71,7 @@ export class Daemon {
         new Promise<void>(resolve => setTimeout(resolve, 250))
       ]);
       if (id !== this.serial) return;
+      this.log(`recording stopped after ${duration}ms; captured ${this.audioBytes} audio bytes; peak ${this.peak}; committing...`);
       const text = await this.scribe!.stop();
       if (id !== this.serial) return;
       this.log(`transcript received in ${Math.round(performance.now() - start)}ms`);

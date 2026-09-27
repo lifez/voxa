@@ -194,7 +194,7 @@ async function chooseSection(gui: boolean): Promise<Section | null> {
 }
 export async function settings(gui = false) {
   if (process.platform === 'darwin') {
-    console.log('macOS shortcuts are fixed: F10 hold, F11 toggle. Use System Settings to send standard F keys if needed.');
+    console.log('macOS shortcuts are fixed: Command+Shift+R hold, Command+Shift+T toggle.');
     return macSettings();
   }
   if (gui && !available('zenity')) { console.log('zenity not installed; using terminal settings (sudo pacman -S zenity for GUI).'); gui = false; }
@@ -228,7 +228,7 @@ export async function setup() {
     for (const section of ['API key', 'Language', 'Microphone', 'Stop punctuation'] as Section[]) {
       if (!await editSection(section, terminalEntry, false)) return;
     }
-    console.log('F10: hold to record; F11: toggle. Restart the launchd agent after changing the API key: launchctl kickstart -k gui/$(id -u)/com.voxa.daemon');
+    console.log('Command+Shift+R: hold to record; Command+Shift+T: toggle. Restart the launchd agent after changing the API key: launchctl kickstart -k gui/$(id -u)/com.voxa.daemon');
     await doctor();
     return;
   }

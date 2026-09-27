@@ -15,7 +15,7 @@ export async function paste(text: string): Promise<void> {
   if (!text.trim()) return;
   if (process.platform === 'darwin') {
     await run('pbcopy', [], text);
-    await run('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
+    await run('osascript', ['-e', 'tell application "System Events" to key code 9 using command down']);
   } else {
     await run('wl-copy', ['--type', 'text/plain;charset=utf-8'], text);
     await run('wtype', ['-M', 'ctrl', 'v', '-m', 'ctrl']);
