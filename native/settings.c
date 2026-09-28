@@ -276,7 +276,7 @@ static int settings(bool setup) {
         else if (!strcmp(input, "2") || !strcmp(input, "3") || !strcmp(input, "4")) result = edit_config(atoi(input));
         else if (!strcmp(input, "5")) {
 #ifdef __APPLE__
-            puts("Command+Shift+R: hold; Command+Shift+T: toggle (fixed)."); result = 0;
+            puts("Command+Shift+R: hold; Command+Shift+U: toggle by default. Record shortcuts in the Voxa menu bar."); result = 0;
 #else
             result = edit_bindings();
 #endif

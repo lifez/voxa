@@ -32,4 +32,4 @@ On a Mac:
 
 Logs are in `~/Library/Logs/voxa.log`. Look for `inserted N UTF-8 bytes` and session timing/errors, not transcript content. `voxa doctor` checks common prerequisites but is not a full app/TCC diagnostic.
 
-Only the system default microphone is supported. Change it in macOS Sound settings. Command+Shift+R holds; Command+Shift+T toggles. Terminal settings do not change macOS shortcuts.
+Only the system default microphone is supported. Change it in macOS Sound settings. Command+Shift+R holds; Command+Shift+U toggles by default. Record custom shortcuts in the Voxa menu bar; terminal settings do not change macOS shortcuts.

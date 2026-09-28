@@ -7,7 +7,7 @@ Requires an internet connection and an **ElevenLabs API key with Speech to Text 
 | Platform | Hold to record | Toggle recording | Text insertion |
 |---|---|---|---|
 | Omarchy | F10 | F11 | Direct typing; clipboard untouched |
-| macOS (experimental) | Command+Shift+R | Command+Shift+T | Paste, then best-effort clipboard restoration |
+| macOS (experimental) | Command+Shift+R | Command+Shift+U | Paste, then best-effort clipboard restoration |
 
 ## Quick start: Omarchy
 
@@ -45,7 +45,7 @@ The installer builds `~/Applications/Voxa.app`. Its Swift shell captures audio i
 3. Choose **Enable / Retry Shortcuts**, then **Test microphone (speak for 2 seconds)**. Expect `mic OK (peak N)` with `N > 0`.
 4. Focus a disposable editor and try Command+Shift+R.
 
-Only the system default microphone is supported. `voxa settings` provides terminal settings; shortcuts are fixed on macOS. The app registers itself as a login item. Logs: `~/Library/Logs/voxa.log`.
+Only the system default microphone is supported. Use **Record Hold Shortcut…** or **Record Toggle Shortcut…** in the Voxa menu bar to press and save a shortcut (F-key or a key with modifiers). Changes apply immediately and persist across restarts; `voxa settings` provides other terminal settings. The app registers itself as a login item. Logs: `~/Library/Logs/voxa.log`.
 
 **The new C/macOS path has not been built or live-tested on this Linux development machine.** See [macOS notes](docs/macos.md) before relying on it.
 

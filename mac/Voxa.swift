@@ -4,6 +4,18 @@ import ApplicationServices
 import ServiceManagement
 import Darwin
 
+private let shortcutModifiers: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
+
+private struct Shortcut: Codable, Equatable {
+    let code: Int64
+    let modifiers: UInt64
+    let label: String
+
+    func matches(_ code: Int64, _ flags: CGEventFlags) -> Bool {
+        self.code == code && flags.intersection(shortcutModifiers).rawValue == modifiers
+    }
+}
+
 // Microphone capture lives in this app process, not the C daemon: TCC grants the app itself.
 final class Voxa: NSObject, NSApplicationDelegate {
     private var server: Int32 = -1
@@ -17,6 +29,15 @@ final class Voxa: NSObject, NSApplicationDelegate {
     private var daemonExecutable = ""
     private var eventTap: CFMachPort?
     private var holding = false
+    private var togglePressed = false
+    private var holdShortcut = Voxa.savedShortcut("hold", fallback: Shortcut(code: 15, modifiers: (CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue), label: "⌘⇧R"))
+    private var toggleShortcut = Voxa.savedShortcut("toggle", fallback: Shortcut(code: 32, modifiers: (CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue), label: "⌘⇧U"))
+
+    private static func savedShortcut(_ name: String, fallback: Shortcut) -> Shortcut {
+        guard let data = UserDefaults.standard.data(forKey: "shortcut.\(name)"),
+              let value = try? JSONDecoder().decode(Shortcut.self, from: data) else { return fallback }
+        return value
+    }
     private let commands = DispatchQueue(label: "voxa.shortcuts")
     private let writer = DispatchQueue(label: "voxa.audio.writer")
     private var item: NSStatusItem!
@@ -29,6 +50,8 @@ final class Voxa: NSObject, NSApplicationDelegate {
         item.button?.title = "Voxa"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Set ElevenLabs API Key…", action: #selector(setAPIKey), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Record Hold Shortcut…", action: #selector(recordHold), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Record Toggle Shortcut…", action: #selector(recordToggle), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Enable / Retry Shortcuts", action: #selector(enableShortcuts), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Test microphone (speak for 2 seconds)", action: #selector(testMic), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit Voxa", action: #selector(quit), keyEquivalent: "q"))
@@ -252,6 +275,51 @@ final class Voxa: NSObject, NSApplicationDelegate {
         if client == fd { client = -1 }
     }
 
+    @objc private func recordHold() { recordShortcut("hold") }
+    @objc private func recordToggle() { recordShortcut("toggle") }
+
+    private func recordShortcut(_ name: String) {
+        guard !holding else { return } // Keep the active hold key's release event intact.
+        let current = name == "hold" ? holdShortcut : toggleShortcut
+        let alert = NSAlert()
+        alert.messageText = "Record \(name.capitalized) Shortcut"
+        alert.informativeText = "Current: \(current.label). Press a key combination, then Save. Escape cancels. Letters need a modifier."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].isEnabled = false
+        var selected: Shortcut?
+        let other = name == "hold" ? toggleShortcut : holdShortcut
+        if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: false) }
+        NSApp.activate(ignoringOtherApps: true)
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { NSApp.abortModal(); return nil }
+            let flags = CGEventFlags(rawValue: UInt64(event.modifierFlags.rawValue)).intersection(shortcutModifiers)
+            let chars = event.charactersIgnoringModifiers ?? ""
+            let functionKey = chars.unicodeScalars.first.map { (0xF704...0xF726).contains($0.value) } ?? false
+            guard !chars.isEmpty, flags.rawValue != 0 || functionKey else {
+                alert.informativeText = "Use a modifier with letters/numbers, or press an F-key."
+                return nil
+            }
+            let key = functionKey ? "F\(Int(chars.unicodeScalars.first!.value) - 0xF704 + 1)" : chars.uppercased()
+            let label = (flags.contains(.maskControl) ? "⌃" : "") + (flags.contains(.maskAlternate) ? "⌥" : "") + (flags.contains(.maskShift) ? "⇧" : "") + (flags.contains(.maskCommand) ? "⌘" : "") + key
+            let value = Shortcut(code: Int64(event.keyCode), modifiers: flags.rawValue, label: label)
+            guard value.code != other.code || value.modifiers != other.modifiers else {
+                alert.informativeText = "Already used by the other shortcut. Choose another."
+                return nil
+            }
+            selected = value
+            alert.informativeText = "Recorded: \(label). Press Save to apply."
+            alert.buttons[0].isEnabled = true
+            return nil
+        }
+        let response = alert.runModal()
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
+        guard response == .alertFirstButtonReturn, let selected else { return }
+        UserDefaults.standard.set(try? JSONEncoder().encode(selected), forKey: "shortcut.\(name)")
+        if name == "hold" { holdShortcut = selected } else { toggleShortcut = selected }
+    }
+
     @objc private func enableShortcuts() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         guard AXIsProcessTrustedWithOptions(options) else {
@@ -283,14 +351,15 @@ final class Voxa: NSObject, NSApplicationDelegate {
             return Unmanaged.passUnretained(event)
         }
         let code = event.getIntegerValueField(.keyboardEventKeycode)
-        let flags = event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate])
-        let matched = flags == [.maskCommand, .maskShift]
+        let flags = event.flags.intersection(shortcutModifiers)
+        let holdMatched = holdShortcut.matches(code, flags)
+        let toggleMatched = toggleShortcut.matches(code, flags)
         let repeated = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         var command: String?
-        if code == 15 { // Command+Shift+R: hold to record
+        if code == holdShortcut.code {
             if type == .keyUp && holding { holding = false; command = "stop" }
-            else if type == .keyDown && matched && !holding && !repeated { holding = true; command = "start" }
-        } else if code == 17 && matched && type == .keyDown && !repeated { command = "toggle" }
+            else if type == .keyDown && holdMatched && !holding && !repeated { holding = true; command = "start" }
+        } else if toggleMatched && type == .keyDown && !repeated { togglePressed = true; command = "toggle" }
         if let command {
             let executable = daemonExecutable
             commands.async {
@@ -304,7 +373,8 @@ final class Voxa: NSObject, NSApplicationDelegate {
             }
             return nil
         }
-        if (code == 15 && holding && type == .keyDown) || (code == 17 && matched && (type == .keyDown || type == .keyUp)) { return nil }
+        if code == toggleShortcut.code && type == .keyUp && togglePressed { togglePressed = false; return nil }
+        if (code == holdShortcut.code && holding && type == .keyDown) || (toggleMatched && type == .keyDown) { return nil }
         return Unmanaged.passUnretained(event)
     }
 
@@ -388,8 +458,17 @@ private let shortcutCallback: CGEventTapCallBack = { _, type, event, userInfo in
     return Unmanaged<Voxa>.fromOpaque(userInfo).takeUnretainedValue().shortcut(type, event)
 }
 
+#if SHORTCUT_TEST
+private let combo = Shortcut(code: 32, modifiers: CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue, label: "⌘⇧U")
+assert(combo.matches(32, [.maskCommand, .maskShift, .maskNonCoalesced]))
+assert(!combo.matches(32, [.maskCommand]))
+assert(!combo.matches(17, [.maskCommand, .maskShift]))
+private let decoded = try JSONDecoder().decode(Shortcut.self, from: JSONEncoder().encode(combo))
+assert(decoded == combo)
+#else
 let app = NSApplication.shared
 let delegate = Voxa()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
 app.run()
+#endif
