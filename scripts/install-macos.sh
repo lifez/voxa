@@ -5,10 +5,16 @@ for cmd in cc make pkg-config swiftc; do command -v "$cmd" >/dev/null || { echo 
 cd "$(dirname "$0")/.."
 # Apple's system libcurl may lack WebSocket support. Prefer Homebrew libraries.
 if command -v brew >/dev/null; then
+  if [[ ! -f "$(brew --prefix)/opt/curl/lib/pkgconfig/libcurl.pc" ]]; then
+    echo 'Homebrew curl is required for WebSocket support: brew install curl' >&2; exit 1
+  fi
   export PKG_CONFIG_PATH="$(brew --prefix curl)/lib/pkgconfig:$(brew --prefix json-c)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 fi
 pkg-config --exists libcurl json-c
 make -C native clean all
+if ! native/voxa doctor | grep -q '^OK libcurl WSS support$'; then
+  echo 'Built libcurl lacks WSS support; refusing to install.' >&2; exit 1
+fi
 app="$HOME/Applications/Voxa.app"
 if pgrep -f "^$app/Contents/MacOS/Voxa$" >/dev/null; then echo 'Quit Voxa from the menu bar before reinstalling.' >&2; exit 1; fi
 resources="$app/Contents/Resources"
