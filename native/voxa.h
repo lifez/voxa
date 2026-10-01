@@ -52,7 +52,7 @@ void config_free(Config *c);
 char *scribe_url(CURL *curl, Config *c);
 void format_transcript(char *text, bool punctuation);
 bool transcript_blank(const char *text);
-// Worker exit codes: 0=inserted, 1=failed, 2=empty (successful, no insertion).
+// Worker exit codes: 0=inserted, 1=failed, 2=empty/cancelled (successful, no insertion).
 int session_run(int control, Config *config, const char *test_endpoint, bool print_only);
 typedef struct {
     bool enabled;

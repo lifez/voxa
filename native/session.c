@@ -142,6 +142,10 @@ int session_run(int control, Config *config, const char *test_endpoint, bool pri
         ssize_t count = read(control, command, sizeof(command));
         if (count == 0) { error = "control disconnected"; goto cleanup; }
         if (count < 0 && errno != EAGAIN && errno != EINTR) goto cleanup;
+        if (count > 0 && memchr(command, 'c', (size_t)count)) {
+            fprintf(stderr, "[voxa-c] session cancelled\n");
+            result = 2; goto cleanup;
+        }
         if (count > 0 && !stopping) {
             stopping = true; stopped = now;
             microphone_stop(mic, micfd);

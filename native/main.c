@@ -217,6 +217,8 @@ static int serve(const char *path, const char *test_endpoint, bool show_osd) {
                 }
             } else if (stop && worker > 0 && !strcmp(state, "recording")) {
                 if (write(control, "s", 1) == 1) { state = "committing"; osd_show(&osd, "committing"); }
+            } else if (valid && !strcmp(c->data, "cancel")) {
+                if (worker > 0 && !strcmp(state, "recording")) write(control, "c", 1);
             } else if (!valid || (strcmp(c->data, "status") && strcmp(c->data, "start") && strcmp(c->data, "stop") && strcmp(c->data, "toggle"))) reply = "unknown command\n";
             char response[32];
             if (!reply) { snprintf(response, sizeof(response), "%s\n", state); reply = response; }
@@ -261,7 +263,7 @@ int main(int argc, char **argv) {
         else if (!command) command = argv[i];
         else goto usage;
     }
-    if (!command || (strcmp(command, "daemon") && strcmp(command, "status") && strcmp(command, "start") && strcmp(command, "stop") && strcmp(command, "toggle") && strcmp(command, "test-osd"))) goto usage;
+    if (!command || (strcmp(command, "daemon") && strcmp(command, "status") && strcmp(command, "start") && strcmp(command, "stop") && strcmp(command, "toggle") && strcmp(command, "cancel") && strcmp(command, "test-osd"))) goto usage;
     if (!strcmp(command, "test-osd")) {
         signal(SIGTERM, signal_stop); signal(SIGINT, signal_stop);
         Osd osd = {.enabled = show_osd};
@@ -292,6 +294,6 @@ int main(int argc, char **argv) {
     int result = serve(path, test_endpoint, show_osd);
     curl_global_cleanup(); return result;
 usage:
-    fprintf(stderr, "Usage: voxa [--socket PATH] [--no-osd] daemon|status|start|stop|toggle|test-osd\n"
+    fprintf(stderr, "Usage: voxa [--socket PATH] [--no-osd] daemon|status|start|stop|toggle|cancel|test-osd\n"
         "       voxa setup|settings [--terminal]|doctor|test-mic|test-scribe|test-paste TEXT\n"); return 2;
 }

@@ -175,7 +175,7 @@ static int shortcut(char *input, char *out, size_t size) {
     return key ? 0 : -1;
 }
 static int edit_bindings(void) {
-    char path[4096], input[256], hold[256], toggle[256], backup[4200];
+    char path[4096], input[256], hold[256], toggle[256], cancel[256], backup[4200];
     const char *xdg = getenv("XDG_CONFIG_HOME"), *home = getenv("HOME");
     int n;
     if (xdg && *xdg) n = snprintf(path, sizeof(path), "%s/hypr/bindings.lua", xdg);
@@ -195,6 +195,9 @@ static int edit_bindings(void) {
     if (ask("Toggle shortcut (blank = F11)", "F11", false, input, sizeof(input))) goto out;
     if (!*input) strcpy(input, "F11");
     if (shortcut(input, toggle, sizeof(toggle)) || !strcmp(hold, toggle)) goto out;
+    if (ask("Cancel shortcut (blank = Escape)", "Escape", false, input, sizeof(input))) goto out;
+    if (!*input) strcpy(input, "Escape");
+    if (shortcut(input, cancel, sizeof(cancel)) || !strcmp(hold, cancel) || !strcmp(toggle, cancel)) goto out;
     // Conservatively reject duplicate/legacy/custom bindings; never rewrite user code.
     char *lines = strdup(outside), *cursor = lines, *line;
     if (!lines) goto out;
@@ -202,12 +205,12 @@ static int edit_bindings(void) {
     while ((line = strsep(&cursor, "\n"))) {
         while (isspace((unsigned char)*line)) line++;
         if (!strncmp(line, "--", 2)) continue;
-        if (strstr(line, "voxa start") || strstr(line, "voxa stop") || strstr(line, "voxa toggle") ||
-            (strstr(line, "o.bind") && (strstr(line, hold) || strstr(line, toggle)))) conflict = true;
+        if (strstr(line, "voxa start") || strstr(line, "voxa stop") || strstr(line, "voxa toggle") || strstr(line, "voxa cancel") ||
+            (strstr(line, "o.bind") && (strstr(line, hold) || strstr(line, toggle) || strcasestr(line, cancel)))) conflict = true;
     }
     free(lines);
     if (conflict) { fputs("Conflicting bindings; remove duplicate/custom Voxa lines manually first.\n", stderr); goto out; }
-    if (asprintf(&next, "%s\n%s\no.bind(\"%s\", \"Start Voxa (hold)\", \"~/.local/bin/voxa start\")\no.bind(\"%s\", \"Stop Voxa (release)\", \"~/.local/bin/voxa stop\", { release = true })\no.bind(\"%s\", \"Toggle Voxa\", \"~/.local/bin/voxa toggle\")\n%s\n", outside, begin, hold, hold, toggle, end) < 0) { next = NULL; goto out; }
+    if (asprintf(&next, "%s\n%s\no.bind(\"%s\", \"Start Voxa (hold)\", \"~/.local/bin/voxa start\")\no.bind(\"%s\", \"Stop Voxa (release)\", \"~/.local/bin/voxa stop\", { release = true })\no.bind(\"%s\", \"Toggle Voxa\", \"~/.local/bin/voxa toggle\")\no.bind(\"%s\", \"Cancel Voxa\", \"~/.local/bin/voxa cancel\"%s)\n%s\n", outside, begin, hold, hold, toggle, cancel, !strcmp(cancel, "ESCAPE") ? ", { non_consuming = true }" : "", end) < 0) { next = NULL; goto out; }
     snprintf(backup, sizeof(backup), "%s.voxa.bak", path);
     struct stat st; if (stat(path, &st)) goto out;
     if (save(backup, old, st.st_mode & 0777) || save(path, next, st.st_mode & 0777)) goto out;

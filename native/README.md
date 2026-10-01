@@ -15,7 +15,7 @@ native/voxa --socket /tmp/voxa-evaluation-PID/control.sock status
 
 The parent directory must be user-owned and not writable by others. Socket permissions are `600`; peer UID is checked. A persistent `.lock` file prevents competing daemons. Do not run simultaneous recordings through different daemons.
 
-`start` opens the mic and sends audio to ElevenLabs; `stop` commits and inserts into the app focused at completion. A `recording` reply acknowledges worker startup, not successful mic/API initialization. See the root README for installation, configuration and commands.
+`start` opens the mic and sends audio to ElevenLabs; `stop` commits and inserts into the app focused at completion. `cancel` discards a recording without committing or inserting text; it is ignored once committing starts. Audio already streamed cannot be recalled. A `recording` reply acknowledges worker startup, not successful mic/API initialization. See the root README for installation, configuration and commands.
 
 ## Implementation
 

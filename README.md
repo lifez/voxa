@@ -4,10 +4,10 @@ Voice dictation for **Omarchy and macOS**, powered by a native **C daemon and CL
 
 Requires an internet connection and an **ElevenLabs API key with Speech to Text access**. Audio is streamed to ElevenLabs; transcription is not offline. No Node.js or npm is required.
 
-| Platform | Hold to record | Toggle recording | Text insertion |
-|---|---|---|---|
-| Omarchy | F10 | F11 | Direct typing; clipboard untouched |
-| macOS (experimental) | Command+Shift+R | Command+Shift+U | Paste, then best-effort clipboard restoration |
+| Platform | Hold to record | Toggle recording | Cancel recording | Text insertion |
+|---|---|---|---|---|
+| Omarchy | F10 | F11 | Esc | Direct typing; clipboard untouched |
+| macOS (experimental) | Command+Shift+R | Command+Shift+U | Esc | Paste, then best-effort clipboard restoration |
 
 ## Quick start: Omarchy
 
@@ -25,7 +25,7 @@ voxa doctor
 
 `voxa setup` runs in a terminal: enter your API key, choose language/microphone/punctuation and shortcuts, then enable the user service. Keys are hidden during input and saved with mode `600`. Existing config and keys are preserved. Shortcut changes back up `bindings.lua` and reject conflicting custom bindings.
 
-To try it, focus a **disposable text editor**, hold F10, speak, then release. Keep the editor focused until text appears. F11 starts/stops the same recording; use one mode at a time. **Newlines may act as Enter**, including submitting a chat or terminal command.
+To try it, focus a **disposable text editor**, hold F10, speak, then release. Keep the editor focused until text appears. F11 starts/stops the same recording; Esc cancels it without committing or inserting text. On Linux, Escape is also forwarded to the focused app (even while recording), so normal Escape actions still work when idle. Use one mode at a time. For existing installations, reinstall with `bash scripts/install.sh`, then choose **5) Shortcuts** in `voxa settings` to add the cancel binding (default Escape, customizable). **Newlines may act as Enter**, including submitting a chat or terminal command.
 
 The installer installs C directly, optionally enables the Omarchy OSD plugin, and upgrades an existing installation only while idle. [Migration and backups](docs/migration.md).
 
@@ -57,6 +57,7 @@ voxa status                      # idle / recording / committing
 voxa start                       # opens mic and connects to ElevenLabs
 voxa stop                        # finishes transcription and inserts text
 voxa toggle                      # start or stop
+voxa cancel                      # discard the current recording; no commit/insertion
 voxa doctor                      # local dependency/config/service checks
 voxa test-mic                    # records 2 seconds; prints byte count and peak
 voxa test-scribe                 # records 3 seconds; prints transcript, no insertion
@@ -64,7 +65,7 @@ voxa test-paste 'hello สวัสดี'     # inserts into focused app — us
 voxa test-osd                    # display-only preview; no mic/API/insertion
 ```
 
-`test-scribe` sends audio to ElevenLabs and uses quota. `test-paste` does not wait for you to focus another app. `test-osd` shares the real overlay; do not run during dictation. Empty transcripts are not inserted. Toggles during transcription are ignored.
+`test-scribe` sends audio to ElevenLabs and uses quota. `test-paste` does not wait for you to focus another app. `test-osd` shares the real overlay; do not run during dictation. Empty transcripts are not inserted. Toggles and cancellation during transcription are ignored. On macOS, press **Esc while recording** to cancel (hold or toggle); Escape is unchanged when idle. Audio already streamed to ElevenLabs cannot be recalled; cancellation stops the session without committing a transcript or inserting text.
 
 ## Configuration
 

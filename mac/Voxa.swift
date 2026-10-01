@@ -30,6 +30,8 @@ final class Voxa: NSObject, NSApplicationDelegate {
     private var eventTap: CFMachPort?
     private var holding = false
     private var togglePressed = false
+    private var cancelPressed = false
+    private var recording = false
     private var holdShortcut = Voxa.savedShortcut("hold", fallback: Shortcut(code: 15, modifiers: (CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue), label: "⌘⇧R"))
     private var toggleShortcut = Voxa.savedShortcut("toggle", fallback: Shortcut(code: 32, modifiers: (CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue), label: "⌘⇧U"))
 
@@ -169,11 +171,12 @@ final class Voxa: NSObject, NSApplicationDelegate {
     }
 
     private func showOsd(_ state: String) {
+        recording = state == "recording"
         if state == "hide" { osdTimer?.invalidate(); osdPanel?.orderOut(nil); return }
         let label: String
         let symbol: String
         switch state {
-        case "recording": label = "Recording…"; symbol = "●"
+        case "recording": label = "Recording… (Esc)"; symbol = "●"
         case "committing": label = "Transcribing…"; symbol = "◌"
         case "done": label = "Pasted"; symbol = "✓"
         case "error": label = "Dictation failed"; symbol = "!"
@@ -356,7 +359,13 @@ final class Voxa: NSObject, NSApplicationDelegate {
         let toggleMatched = toggleShortcut.matches(code, flags)
         let repeated = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         var command: String?
-        if code == holdShortcut.code {
+        if code == 53 && cancelPressed {
+            if type == .keyUp { cancelPressed = false }
+            return nil
+        }
+        if code == 53 && flags.isEmpty && type == .keyDown && recording && !repeated {
+            cancelPressed = true; recording = false; command = "cancel"
+        } else if code == holdShortcut.code {
             if type == .keyUp && holding { holding = false; command = "stop" }
             else if type == .keyDown && holdMatched && !holding && !repeated { holding = true; command = "start" }
         } else if toggleMatched && type == .keyDown && !repeated { togglePressed = true; command = "toggle" }
@@ -377,6 +386,29 @@ final class Voxa: NSObject, NSApplicationDelegate {
         if (code == holdShortcut.code && holding && type == .keyDown) || (toggleMatched && type == .keyDown) { return nil }
         return Unmanaged.passUnretained(event)
     }
+
+#if SHORTCUT_TEST
+    func testCancelShortcut() {
+        daemonExecutable = "/usr/bin/true"
+        let down = CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: true)!
+        let up = CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: false)!
+        down.flags = []
+        up.flags = []
+        assert(shortcut(.keyDown, down) != nil) // Escape belongs to the focused app while idle.
+        recording = true
+        down.flags = .maskCommand
+        assert(shortcut(.keyDown, down) != nil)
+        down.flags = []
+        assert(shortcut(.keyDown, down) == nil)
+        assert(!recording && cancelPressed)
+        down.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
+        assert(shortcut(.keyDown, down) == nil)
+        assert(shortcut(.keyUp, up) == nil)
+        assert(!cancelPressed)
+        assert(shortcut(.keyUp, up) != nil)
+        commands.sync {}
+    }
+#endif
 
     @objc private func setAPIKey() {
         let config = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config").path
@@ -465,6 +497,7 @@ assert(!combo.matches(32, [.maskCommand]))
 assert(!combo.matches(17, [.maskCommand, .maskShift]))
 private let decoded = try JSONDecoder().decode(Shortcut.self, from: JSONEncoder().encode(combo))
 assert(decoded == combo)
+Voxa().testCancelShortcut()
 #else
 let app = NSApplication.shared
 let delegate = Voxa()

@@ -260,6 +260,33 @@ class NativeTests(unittest.TestCase):
         self.assertIn("stop_to_done_ms=", f.logs())
         self.assertNotRegex(f.logs(), "test-key|สวัสดี|hello")
 
+    def test_cancel_recording(self):
+        f = Fixture(self)
+        self.assertEqual(f.command("cancel"), "idle")
+        self.assertEqual(f.command("toggle"), "recording")
+        until(lambda: len(f.chunks) > 0)
+        mic = int((f.dir / "mic").read_text())
+        f.command("cancel")
+        until(lambda: f.command("status") == "idle")
+        until(lambda: f.states()[-1:] == ["hide"])
+        self.assertFalse(any(chunk["commit"] for chunk in f.chunks))
+        self.assertFalse((f.dir / "text").exists())
+        self.assertEqual(f.states(), ["recording", "hide"])
+        with self.assertRaises(ProcessLookupError):
+            os.kill(mic, 0)
+        self.assertEqual(f.command("cancel"), "idle")
+        f.dictation()
+        self.assertEqual((f.dir / "text").read_text(), "สวัสดี hello")
+
+    def test_cancel_during_commit_is_ignored(self):
+        f = Fixture(self, no_response=True)
+        f.command("toggle")
+        until(lambda: len(f.chunks) > 0)
+        self.assertEqual(f.command("toggle"), "committing")
+        self.assertEqual(f.command("cancel"), "committing")
+        until(lambda: any(chunk["commit"] for chunk in f.chunks))
+        self.assertFalse((f.dir / "text").exists())
+
     def test_empty_transcript(self):
         f = Fixture(self, text=" \t\u00a0\u3000\ufeff")
         f.dictation()
@@ -437,6 +464,57 @@ class NativeTests(unittest.TestCase):
             env = {**os.environ, "XDG_RUNTIME_DIR": tmp}
             result = subprocess.run([str(PRODUCTION), "status"], env=env, capture_output=True, timeout=3)
             self.assertEqual(result.returncode, 1)
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "Omarchy shortcuts")
+class BindingTests(unittest.TestCase):
+    def test_cancel_bindings_and_conflicts(self):
+        with tempfile.TemporaryDirectory(prefix="voxa-bindings-") as tmp:
+            root = Path(tmp)
+            path = root / "hypr/bindings.lua"
+            path.parent.mkdir()
+            old = '-- Keep user settings\no.bind("SUPER + X", "Other", "other")\n'
+            managed = (old + "-- BEGIN VOXA (managed by voxa settings)\n"
+                       'o.bind("F11", "Toggle Voxa", "~/.local/bin/voxa toggle")\n'
+                       "-- END VOXA\n")
+            for original, cancel, expected in [
+                (old, "", "ESCAPE"),
+                (managed, "Escape", "ESCAPE"),
+                (old, "F12", "F12"),
+                (managed, "CTRL + F12", "CTRL + F12"),
+                (old, "F10", None),
+                (old, "F11", None),
+                (old, "CTRL++F12", None),
+                (old + 'o.bind("F12", "Other", "other")\n', "F12", None),
+                (old + 'o.bind("ESCAPE", "Other", "other")\n', "", None),
+                (old + 'o.bind("Escape", "Other", "other")\n', "", None),
+                (old + 'o.bind("F9", "Cancel", "~/.local/bin/voxa cancel")\n', "", None),
+            ]:
+                with self.subTest(cancel=cancel, original=original):
+                    path.write_text(original)
+                    master, slave = pty.openpty()
+                    env = {**os.environ, "XDG_CONFIG_HOME": tmp}
+                    env.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
+                    proc = subprocess.Popen([str(PRODUCTION), "settings"],
+                                            stdin=slave, stdout=slave, stderr=slave, env=env)
+                    os.close(slave)
+                    try:
+                        os.write(master, f"5\nF10\nF11\n{cancel}\n0\n".encode())
+                        self.assertEqual(proc.wait(timeout=3), 0)
+                    finally:
+                        if proc.poll() is None:
+                            proc.kill()
+                            proc.wait()
+                        os.close(master)
+                    if expected is None:
+                        self.assertEqual(path.read_text(), original)
+                    else:
+                        saved = path.read_text()
+                        self.assertIn(old, saved)
+                        options = ", { non_consuming = true }" if expected == "ESCAPE" else ""
+                        self.assertIn(f'o.bind("{expected}", "Cancel Voxa", "~/.local/bin/voxa cancel"{options})', saved)
+                        self.assertEqual(saved.count("voxa cancel"), 1)
+                        self.assertEqual(Path(str(path) + ".voxa.bak").read_text(), original)
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux installer")
