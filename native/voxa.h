@@ -33,6 +33,9 @@ pid_t microphone_start(const char *device, int *output);
 void microphone_stop(pid_t pid, int fd);
 void microphone_cleanup(pid_t pid, int fd);
 int insert_text(const char *text);
+#ifdef __linux__
+int keyboard_insert(const char *text);
+#endif
 int utilities(int argc, char **argv);
 int config_path(char *out, size_t size, const char *file);
 double now_ms(void);

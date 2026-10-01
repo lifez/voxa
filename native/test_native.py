@@ -287,6 +287,15 @@ class NativeTests(unittest.TestCase):
         until(lambda: any(chunk["commit"] for chunk in f.chunks))
         self.assertFalse((f.dir / "text").exists())
 
+    def test_thai_transcript_preserved_before_typing(self):
+        # Test builds capture the insertion boundary; desktop tests check actual keys.
+        text = "รู้สึกว่าตัว transcribe ที่ Linux จะทำงานได้ไม่ค่อยถูกต้องเท่าไหร่ น้ำ กำ ทำ"
+        f = Fixture(self, text=text)
+        f.dictation()
+        self.assertEqual((f.dir / "text").read_text(), text)
+        self.assertEqual(json.loads((f.dir / "args").read_text()), ["-"])
+        self.assertFalse((f.dir / "clipboard").exists())
+
     def test_empty_transcript(self):
         f = Fixture(self, text=" \t\u00a0\u3000\ufeff")
         f.dictation()
@@ -390,10 +399,29 @@ class NativeTests(unittest.TestCase):
         f.stop()
         self.assertEqual(f.states(), [])
 
+    def test_native_keyboard_validation_and_timeout(self):
+        with tempfile.TemporaryDirectory(prefix="voxa-wayland-") as directory:
+            display = Path(directory) / "wayland-test"
+            env = {**os.environ, "WAYLAND_DISPLAY": str(display), "XDG_RUNTIME_DIR": directory}
+            # A connected compositor that never answers must not hang insertion.
+            with socket.socket(socket.AF_UNIX) as server:
+                server.bind(str(display))
+                server.listen(1)
+                start = time.monotonic()
+                result = subprocess.run([str(PRODUCTION), "test-paste", "hi"], env=env,
+                                        capture_output=True, timeout=4)
+                self.assertEqual(result.returncode, 1)
+                self.assertLess(time.monotonic() - start, 3.5)
+            for text in [b"\xff", b"\xe0\xb8", b"\x1b", "".join(chr(0x400 + i) for i in range(385)).encode()]:
+                result = subprocess.run([os.fsencode(PRODUCTION), b"test-paste", text], env=env,
+                                        capture_output=True, timeout=3)
+                self.assertEqual(result.returncode, 1)
+
     def test_cli_tests_use_native(self):
         f = Fixture(self)
         def run(*args):
-            return subprocess.run([str(PRODUCTION), *args], env=f.env, capture_output=True, text=True, timeout=5)
+            binary = BINARY if args[0] == "test-paste" else PRODUCTION
+            return subprocess.run([str(binary), *args], env=f.env, capture_output=True, text=True, timeout=5)
         result = run("test-mic")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertRegex(result.stdout, r"peak [1-9]\d*")
@@ -551,7 +579,7 @@ class InstallerTests(unittest.TestCase):
         mock = root / "bin"
         mock.mkdir()
         scripts = {
-            "make": "exit 0", "cc": "exit 0", "pkg-config": "exit 0",
+            "make": "exit 0", "cc": "exit 0", "pkg-config": "exit 0", "wayland-scanner": "exit 0",
             "pw-record": "exit 99", "wtype": "exit 99",
             "omarchy-shell": "exit 1",
             "node": "echo Node must not run >&2; exit 99",

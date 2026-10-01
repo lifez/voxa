@@ -4,10 +4,10 @@ set -euo pipefail
 umask 077
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 [[ $(uname -s) == Linux ]] || { echo 'Use scripts/install-macos.sh on macOS.' >&2; exit 1; }
-for cmd in make cc pkg-config pw-record wtype systemctl; do
-  command -v "$cmd" >/dev/null || { echo "Missing $cmd (Arch: base-devel curl json-c pipewire wtype)" >&2; exit 1; }
+for cmd in make cc pkg-config wayland-scanner pw-record systemctl; do
+  command -v "$cmd" >/dev/null || { echo "Missing $cmd (Arch: base-devel curl json-c pipewire wayland libxkbcommon)" >&2; exit 1; }
 done
-pkg-config --exists libcurl json-c
+pkg-config --exists libcurl json-c wayland-client xkbcommon
 make -C native clean all
 : "${XDG_CONFIG_HOME:=$HOME/.config}"
 app="$HOME/.local/share/voxa"

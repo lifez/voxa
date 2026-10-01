@@ -124,8 +124,13 @@ int insert_text(const char *text) {
     if (!slash || (size_t)(slash-resolved)+sizeof("/voxa-paste") > sizeof(resolved)) return -1;
     strcpy(slash, "/voxa-paste");
     char *args[] = {resolved, NULL};
-#else
+#elif defined(VOXA_TESTING)
+    // Offline integration tests capture the API-to-insertion boundary.
     char *args[] = {"wtype", "-", NULL};
+#else
+    return keyboard_insert(text);
 #endif
+#if defined(__APPLE__) || defined(VOXA_TESTING)
     return run_command(args, text, 2000);
+#endif
 }

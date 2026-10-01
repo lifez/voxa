@@ -11,11 +11,11 @@ Requires an internet connection and an **ElevenLabs API key with Speech to Text 
 
 ## Quick start: Omarchy
 
-Requires Hyprland, PipeWire, a C11 compiler, make, pkg-config, json-c and **libcurl with WebSocket (`wss`) support**.
+Requires Hyprland, PipeWire, Wayland, libxkbcommon, a C11 compiler, make, pkg-config, json-c and **libcurl with WebSocket (`wss`) support**.
 
 ```sh
 # Arch: install missing packages
-sudo pacman -S base-devel curl json-c pipewire wtype
+sudo pacman -S base-devel curl json-c pipewire wayland libxkbcommon
 
 # Run from this repository
 bash scripts/install.sh
@@ -79,7 +79,7 @@ Use `voxa settings` or edit `${XDG_CONFIG_HOME:-~/.config}/voxa/config.json` ([e
 | `keyterms` | `[]` | Technical terms to bias transcription |
 | `stopPunctuation` | `false` | Remove a final `.` or `。`; `true` keeps it |
 | `debug` | `false` | Accepted for compatibility; C never logs transcript text |
-| `pasteCommand` | `"wtype"` | Compatibility field; must remain `wtype`. macOS uses its native paste helper |
+| `pasteCommand` | `"wtype"` | Legacy compatibility field; must remain `wtype`. Linux now uses native virtual-keyboard typing; macOS uses its paste helper |
 
 **API keys:** enter 1–5 comma-separated keys in settings. Voxa rotates sequentially, one key per recording. This does not increase quota for keys sharing an account. Keys are read from `voxa/env` each recording; a nonempty `ELEVENLABS_API_KEY` environment variable overrides that file. Never put credentials in `config.json`, shell history or the repository.
 
@@ -88,9 +88,9 @@ Use `voxa settings` or edit `${XDG_CONFIG_HOME:-~/.config}/voxa/config.json` ([e
 - Microphone capture only while recording; no saved audio or transcript files.
 - Logs contain state/errors/timings, not keys or transcript text. `test-scribe` explicitly prints its transcript.
 - ElevenLabs data retention depends on your account policy.
-- Omarchy uses `wtype` without reading/writing the clipboard.
+- Omarchy uses a native Wayland virtual keyboard without reading/writing the clipboard. Each transcript gets one keymap using only physical writing-key codes, avoiding modifier/function-key collisions. Up to 384 distinct characters per transcript; larger alphabets are rejected before typing.
 - macOS snapshots readable clipboard types, pastes, then restores after 250 ms unless another copy changed it. Restoration is best-effort; slow apps may miss the paste and clipboard history tools may retain the temporary transcript.
-- Recordings are limited to **60 seconds**; exceeding the limit cancels the session. Insertion has a two-second timeout. Focus is not restored automatically.
+- Recordings are limited to **60 seconds**; exceeding the limit cancels the session. Linux insertion allows two seconds plus 6 ms per character, capped at 62 seconds; macOS allows two seconds. Focus is not restored automatically.
 - Offline integration tests use mocks. They do not prove real ElevenLabs transcription quality or compatibility with every target app.
 
 ## Troubleshooting
@@ -99,7 +99,7 @@ Use `voxa settings` or edit `${XDG_CONFIG_HOME:-~/.config}/voxa/config.json` ([e
 
 - Service/logs: `systemctl --user status voxa`, `journalctl --user -u voxa -f`.
 - Microphone: `voxa test-mic`, `wpctl status`, `systemctl --user status pipewire wireplumber`.
-- Insertion: check `WAYLAND_DISPLAY` and `command -v wtype`. The service needs the graphical session environment; inspect `systemctl --user show-environment`.
+- Insertion: check `WAYLAND_DISPLAY`. The compositor must support `zwp_virtual_keyboard_manager_v1` (Hyprland does). The service needs the graphical session environment; inspect `systemctl --user show-environment`.
 - Shortcuts: `hyprctl binds -j`; change them with `voxa settings`. Standalone modifier keys are not supported as hold shortcuts.
 - OSD: check `omarchy-shell shell listPlugins` for `voxa.osd`. Display failure does not stop dictation.
 - `libcurl requires WSS support`: install a libcurl build with WebSocket support and rebuild.
@@ -130,6 +130,7 @@ macOS: quit Voxa, disable its login item, remove `~/Applications/Voxa.app` and `
 ```sh
 make                             # C daemon + CLI → native/voxa
 make test                        # offline tests; Python 3 standard library, Linux
+python3 native/test_keyboard_desktop.py  # opt-in Ghostty/Hyprland real-key test; briefly changes focus
 make sanitize                    # AddressSanitizer + UndefinedBehaviorSanitizer tests
 make clean all                   # restore release build
 python3 native/bench-daemon.py    # isolated status-only benchmark; no mic/API

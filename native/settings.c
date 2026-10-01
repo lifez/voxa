@@ -233,7 +233,7 @@ static int doctor(void) {
 #ifdef __APPLE__
     const char *commands[] = {"osascript"};
 #else
-    const char *commands[] = {"pw-record", "wtype", "hyprctl", "systemctl"};
+    const char *commands[] = {"pw-record", "hyprctl", "systemctl"};
 #endif
     for (size_t i = 0; i < sizeof(commands)/sizeof(commands[0]); i++) {
         bool ok = available(commands[i]); printf("%s %s\n", ok ? "OK" : "FAIL", commands[i]); failures += !ok;

@@ -9,5 +9,8 @@ env
 config.json
 native/voxa
 native/voxa-test
+native/voxa-keyboard-test
+native/virtual-keyboard-client.h
+native/virtual-keyboard-protocol.c
 native/voxa-c
 native/voxa-c-test
