@@ -616,6 +616,8 @@ exit 0
         self.assertFalse((app / "node_modules").exists())
         self.assertFalse((units / "voxa.service.d/90-native.conf").exists())
         self.assertNotIn("node", (units / "voxa.service").read_text())
+        self.assertIn("WantedBy=graphical-session.target", (units / "voxa.service").read_text())
+        self.assertIn("After=graphical-session.target", (units / "voxa.service").read_text())
         self.assertIn("custom-config", (units / "voxa.service.d/80-config.conf").read_text())
         backups = list((home / ".local/share/voxa-backups").glob("install-*"))
         self.assertEqual(len(backups), 1)
