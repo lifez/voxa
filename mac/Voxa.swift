@@ -16,6 +16,82 @@ private struct Shortcut: Codable, Equatable {
     }
 }
 
+private struct VocabularyConfig {
+    let url: URL
+    private let original: Data?
+    private let object: [String: Any]
+    let terms: [String]
+
+    init(url: URL) throws {
+        self.url = url
+        do { original = try Data(contentsOf: url) }
+        catch CocoaError.fileReadNoSuchFile { original = nil }
+        if let original {
+            guard let parsed = try JSONSerialization.jsonObject(with: original) as? [String: Any] else {
+                throw Self.error("config.json must contain a JSON object.")
+            }
+            object = parsed
+        } else { object = [:] }
+        if let value = object["keyterms"] {
+            guard let list = value as? [String] else {
+                throw Self.error("Custom vocabulary in config.json must be a list of words.")
+            }
+            terms = list
+        } else { terms = [] }
+    }
+
+    private static let whitespace = CharacterSet(charactersIn: " \t\n\r\u{000B}\u{000C}\u{00A0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
+
+    static func parse(_ text: String) throws -> [String] {
+        let terms = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: whitespace) }.filter { !$0.isEmpty }
+        guard terms.count <= 50 else { throw error("Use at most 50 words or phrases.") }
+        var seen = Set<Data>()
+        for (index, term) in terms.enumerated() {
+            guard term.unicodeScalars.count <= 20 else {
+                throw error("Term \(index + 1) exceeds 20 Unicode characters. Thai combining marks count separately.")
+            }
+            guard !term.unicodeScalars.contains(where: { $0.value < 32 || (0x7F...0x9F).contains($0.value) }) else {
+                throw error("Term \(index + 1) contains a control character.")
+            }
+            guard seen.insert(Data(term.utf8)).inserted else {
+                throw error("Term \(index + 1) duplicates an earlier word or phrase.")
+            }
+        }
+        return terms
+    }
+
+    func save(_ text: String) throws {
+        let terms = try Self.parse(text)
+        var latest: Data?
+        do { latest = try Data(contentsOf: url) }
+        catch CocoaError.fileReadNoSuchFile { latest = nil }
+        guard latest == original else {
+            throw Self.error("Settings changed elsewhere. Cancel and reopen Custom Vocabulary to load the latest settings.")
+        }
+        var updated = object
+        updated["keyterms"] = terms
+        let data = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys])
+        guard data.count < 65536 else { throw Self.error("config.json is too large to save.") }
+        let directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let temporary = directory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let fd = Darwin.open(temporary.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        try handle.write(contentsOf: data)
+        try handle.close()
+        guard Darwin.rename(temporary.path, url.path) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+    }
+
+    private static func error(_ message: String) -> NSError {
+        NSError(domain: "Voxa.Vocabulary", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+}
+
 // Microphone capture lives in this app process, not the C daemon: TCC grants the app itself.
 final class Voxa: NSObject, NSApplicationDelegate {
     private var server: Int32 = -1
@@ -52,6 +128,7 @@ final class Voxa: NSObject, NSApplicationDelegate {
         item.button?.title = "Voxa"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Set ElevenLabs API Key…", action: #selector(setAPIKey), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Custom Vocabulary…", action: #selector(editVocabulary), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Record Hold Shortcut…", action: #selector(recordHold), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Record Toggle Shortcut…", action: #selector(recordToggle), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Enable / Retry Shortcuts", action: #selector(enableShortcuts), keyEquivalent: ""))
@@ -410,6 +487,53 @@ final class Voxa: NSObject, NSApplicationDelegate {
     }
 #endif
 
+    @objc fileprivate func editVocabulary() {
+        let base = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config").path
+        let url = URL(fileURLWithPath: base).appendingPathComponent("voxa/config.json")
+        NSApp.activate(ignoringOtherApps: true)
+        do {
+            let config = try VocabularyConfig(url: url)
+            let alert = NSAlert()
+            alert.messageText = "Custom Vocabulary"
+            let instructions = "One word or phrase per line. Add a line to add a term; delete a line to remove it. Blank lines are ignored.\n\nUp to 50 terms, 20 Unicode characters each. Saved terms apply to the next recording.\n\nThese are hints, not guaranteed replacements. Terms are sent to ElevenLabs, with an additional provider cost."
+            alert.informativeText = instructions
+            alert.addButton(withTitle: "Save")
+            alert.addButton(withTitle: "Cancel")
+            let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 420, height: 240))
+            scroll.hasVerticalScroller = true
+            scroll.borderType = .bezelBorder
+            let editor = NSTextView(frame: scroll.bounds)
+            editor.isRichText = false
+            editor.isAutomaticQuoteSubstitutionEnabled = false
+            editor.isAutomaticDashSubstitutionEnabled = false
+            editor.isAutomaticTextReplacementEnabled = false
+            editor.isAutomaticSpellingCorrectionEnabled = false
+            editor.font = .systemFont(ofSize: 14)
+            editor.textContainerInset = NSSize(width: 8, height: 8)
+            editor.isVerticallyResizable = true
+            editor.autoresizingMask = [.width]
+            editor.textContainer?.widthTracksTextView = true
+            editor.string = config.terms.joined(separator: "\n")
+            editor.setAccessibilityLabel("Custom words and phrases, one per line")
+            scroll.documentView = editor
+            alert.accessoryView = scroll
+            alert.window.initialFirstResponder = editor
+            while alert.runModal() == .alertFirstButtonReturn {
+                do { try config.save(editor.string); return }
+                catch {
+                    alert.informativeText = "Could not save: \(error.localizedDescription)\n\n\(instructions)"
+                }
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Could Not Open Custom Vocabulary"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+
     @objc private func setAPIKey() {
         let config = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config").path
         let path = URL(fileURLWithPath: config).appendingPathComponent("voxa/env")
@@ -498,6 +622,57 @@ assert(!combo.matches(17, [.maskCommand, .maskShift]))
 private let decoded = try JSONDecoder().decode(Shortcut.self, from: JSONEncoder().encode(combo))
 assert(decoded == combo)
 Voxa().testCancelShortcut()
+#elseif VOCABULARY_TEST
+private let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+defer { try? FileManager.default.removeItem(at: directory) }
+private let url = directory.appendingPathComponent("config.json")
+private func check(_ condition: Bool) { assert(condition) }
+private func rejects(_ text: String) {
+    do { _ = try VocabularyConfig.parse(text); assertionFailure("Expected invalid vocabulary") }
+    catch {}
+}
+check(try VocabularyConfig.parse("  Jitta  \n\nสวัสดี\nNew York\n") == ["Jitta", "สวัสดี", "New York"])
+check(try VocabularyConfig.parse("\u{FEFF}hello\u{00A0}") == ["hello"])
+check(try VocabularyConfig.parse("").isEmpty)
+check(try VocabularyConfig.parse(String(repeating: "ก", count: 20)).count == 1)
+check(try VocabularyConfig.parse((0..<50).map { "word\($0)" }.joined(separator: "\n")).count == 50)
+check(try VocabularyConfig.parse("é\ne\u{0301}").count == 2)
+rejects("Jitta\nJitta")
+rejects(String(repeating: "ก", count: 21))
+rejects(String(repeating: "ก้", count: 11))
+rejects((0..<51).map { "word\($0)" }.joined(separator: "\n"))
+rejects("bad\u{0000}word")
+rejects("bad\u{0085}word")
+rejects("bad\tword")
+try VocabularyConfig(url: url).save("Jitta\nสวัสดี")
+check(try VocabularyConfig(url: url).terms == ["Jitta", "สวัสดี"])
+private let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+assert((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+try Data("{\"language\":null,\"stopPunctuation\":true,\"keyterms\":[\"old\"]}".utf8).write(to: url)
+try VocabularyConfig(url: url).save("new")
+private let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+assert(saved["language"] is NSNull && saved["stopPunctuation"] as? Bool == true)
+try VocabularyConfig(url: url).save("")
+check(try VocabularyConfig(url: url).terms.isEmpty)
+private let stale = try VocabularyConfig(url: url)
+try VocabularyConfig(url: url).save("external change")
+do { try stale.save("overwrite"); assertionFailure("Expected conflict") } catch {}
+check(try VocabularyConfig(url: url).terms == ["external change"])
+try Data("{bad json".utf8).write(to: url)
+do { _ = try VocabularyConfig(url: url); assertionFailure("Expected malformed JSON failure") } catch {}
+try Data("{\"keyterms\":null}".utf8).write(to: url)
+do { _ = try VocabularyConfig(url: url); assertionFailure("Expected invalid keyterms failure") } catch {}
+print("Vocabulary tests passed")
+#elseif VOCABULARY_UI_TEST
+let app = NSApplication.shared
+let delegate = Voxa()
+app.setActivationPolicy(.accessory)
+DispatchQueue.main.async {
+    delegate.editVocabulary()
+    app.terminate(nil)
+}
+app.run()
 #else
 let app = NSApplication.shared
 let delegate = Voxa()

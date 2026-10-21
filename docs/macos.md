@@ -16,6 +16,18 @@ The installed binary uses these shared libraries: keep them installed. This is a
 
 `Resources/bin/voxa-paste` snapshots readable pasteboard types, pastes using System Events, and restores after a 250 ms grace period if the clipboard was not changed by another copy. This is best-effort; clipboard history can capture the temporary transcript.
 
+## Custom vocabulary UI checks
+
+The **Custom Vocabulary…** menu item edits the same `keyterms` list as `voxa settings`. It does not need a daemon restart. To run isolated model/file tests and the native dialog checks on macOS:
+
+```sh
+swiftc -D VOCABULARY_TEST mac/Voxa.swift -o /tmp/voxa-vocabulary-test
+/tmp/voxa-vocabulary-test
+python3 mac/test_vocabulary_ui.py
+```
+
+The UI script requires Accessibility/Automation permission for System Events. It opens test dialogs using a temporary config, checks Save, Cancel, Thai text, validation retry, and removing all terms, and does not access your live config or microphone.
+
 ## Manual validation required
 
 This port was implemented on Linux. **It has not been compiled or live-tested on macOS.** Linux mocked tests do not validate these integrations.

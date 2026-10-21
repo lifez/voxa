@@ -83,7 +83,9 @@ Use `voxa settings` or edit `${XDG_CONFIG_HOME:-~/.config}/voxa/config.json` ([e
 
 ### Custom vocabulary
 
-Choose **6) Custom vocabulary** in `voxa settings` (on either platform). Use **a** to add a word or phrase, **r** then its list number to remove it, and **b** to return. Entries are saved immediately and persist across restarts; changes apply to the next recording, not one already in flight. Remove and re-add an entry to correct it.
+**macOS:** choose **Custom Vocabulary…** in the Voxa menu bar. Enter one word or phrase per line, then click **Save**. Delete a line to remove a term; clear all lines to remove all terms. Blank lines are ignored, and **Cancel** discards edits. Invalid entries show an error without losing your edits. If another tool changes the config while the dialog is open, cancel and reopen it before saving.
+
+**Terminal, either platform:** choose **6) Custom vocabulary** in `voxa settings`. Use **a** to add a word or phrase, **r** then its list number to remove it, and **b** to return. Entries are saved immediately and persist across restarts; changes apply to the next recording, not one already in flight. Remove and re-add an entry to correct it.
 
 Leading/trailing whitespace is trimmed when adding. Empty/whitespace-only entries, exact duplicates, control characters, more than 50 entries, and entries longer than 20 Unicode code points are rejected. Unicode terms (including Thai) and phrases are supported; combining marks count separately. Manually edited invalid vocabulary causes config loading to fail rather than silently dropping hints. An absent or empty `keyterms` list sends no vocabulary parameter.
 
