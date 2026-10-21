@@ -76,10 +76,18 @@ Use `voxa settings` or edit `${XDG_CONFIG_HOME:-~/.config}/voxa/config.json` ([e
 | `language` | `"th"` | Primary language; `null` for automatic detection |
 | `secondaryLanguages` | `["en"]` | Additional languages; use `[]` with auto detection |
 | `audioDevice` | `"default"` | PipeWire source name/ID from `wpctl status`; macOS supports only `default` |
-| `keyterms` | `[]` | Technical terms to bias transcription |
+| `keyterms` | `[]` | Custom vocabulary hints for Scribe v2 Realtime: up to 50 words/phrases, at most 20 Unicode characters each |
 | `stopPunctuation` | `false` | Remove a final `.` or `。`; `true` keeps it |
 | `debug` | `false` | Accepted for compatibility; C never logs transcript text |
 | `pasteCommand` | `"wtype"` | Legacy compatibility field; must remain `wtype`. Linux now uses native virtual-keyboard typing; macOS uses its paste helper |
+
+### Custom vocabulary
+
+Choose **6) Custom vocabulary** in `voxa settings` (on either platform). Use **a** to add a word or phrase, **r** then its list number to remove it, and **b** to return. Entries are saved immediately and persist across restarts; changes apply to the next recording, not one already in flight. Remove and re-add an entry to correct it.
+
+Leading/trailing whitespace is trimmed when adding. Empty/whitespace-only entries, exact duplicates, control characters, more than 50 entries, and entries longer than 20 Unicode code points are rejected. Unicode terms (including Thai) and phrases are supported; combining marks count separately. Manually edited invalid vocabulary causes config loading to fail rather than silently dropping hints. An absent or empty `keyterms` list sends no vocabulary parameter.
+
+These are **vocabulary hints, not guaranteed replacements**. Saved terms are sent to **ElevenLabs with transcription**, and keyterm prompting has an **additional provider cost**. Avoid sensitive terms you do not want to share. See the official [keyterm prompting guide](https://elevenlabs.io/docs/eleven-api/guides/how-to/speech-to-text/batch/keyterm-prompting) and [realtime API reference](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime). Voxa uses `scribe_v2_realtime`, not batch Scribe v2: the larger batch vocabulary limits do not apply.
 
 **API keys:** enter 1–5 comma-separated keys in settings. Voxa rotates sequentially, one key per recording. This does not increase quota for keys sharing an account. Keys are read from `voxa/env` each recording; a nonempty `ELEVENLABS_API_KEY` environment variable overrides that file. Never put credentials in `config.json`, shell history or the repository.
 
@@ -129,7 +137,7 @@ macOS: quit Voxa, disable its login item, remove `~/Applications/Voxa.app` and `
 
 ```sh
 make                             # C daemon + CLI → native/voxa
-make test                        # offline tests; Python 3 standard library, Linux
+make test                        # offline tests; Python 3 standard library; Linux integration mocks skip on macOS
 python3 native/test_keyboard_desktop.py  # opt-in Ghostty/Hyprland real-key test; briefly changes focus
 make sanitize                    # AddressSanitizer + UndefinedBehaviorSanitizer tests
 make clean all                   # restore release build

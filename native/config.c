@@ -116,6 +116,7 @@ int config_read(Config *c) {
         for (size_t j = 0; j < json_object_array_length(v); j++)
             if (!string_ok(json_object_array_get_idx(v, j))) goto invalid;
     }
+    if (keyterms_error(json_object_object_get(c->json, "keyterms"))) goto invalid;
     v = json_object_object_get(c->json, "audioDevice");
     if (!string_ok(v) || !*json_object_get_string(v)) goto invalid;
     c->device = json_object_get_string(v);
@@ -171,6 +172,48 @@ static size_t whitespace(const char *s) {
         if (!strncmp(s, unicode[i], n)) return n;
     }
     return 0;
+}
+void trim_whitespace(char *text) {
+    char *start = text;
+    while (*start && whitespace(start)) start += whitespace(start);
+    size_t end = 0;
+    for (size_t i = 0; start[i];) {
+        size_t width = whitespace(start+i);
+        if (width) i += width;
+        else end = ++i;
+    }
+    memmove(text, start, end);
+    text[end] = 0;
+}
+const char *keyterms_error(json_object *terms) {
+    if (!json_object_is_type(terms, json_type_array)) return "Custom vocabulary must be a list.";
+    size_t count = json_object_array_length(terms);
+    if (count > 50) return "Use at most 50 custom words or phrases.";
+    for (size_t i = 0; i < count; i++) {
+        json_object *value = json_object_array_get_idx(terms, i);
+        if (!string_ok(value)) return "Each custom word must be text without NUL characters.";
+        const unsigned char *s = (const unsigned char *)json_object_get_string(value);
+        if (transcript_blank((const char *)s)) return "Enter a nonempty word or phrase (not only whitespace).";
+        size_t chars = 0;
+        while (*s) {
+            unsigned cp = *s++; unsigned more = 0, minimum = 0;
+            if (cp >= 0xc2 && cp <= 0xdf) { cp &= 31; more = 1; minimum = 0x80; }
+            else if (cp >= 0xe0 && cp <= 0xef) { cp &= 15; more = 2; minimum = 0x800; }
+            else if (cp >= 0xf0 && cp <= 0xf4) { cp &= 7; more = 3; minimum = 0x10000; }
+            else if (cp >= 0x80) return "Use valid UTF-8 text.";
+            for (unsigned j = 0; j < more; j++) {
+                if ((*s & 0xc0) != 0x80) return "Use valid UTF-8 text.";
+                cp = (cp << 6) | (*s++ & 63);
+            }
+            if (cp < minimum || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return "Use valid UTF-8 text.";
+            if (cp < 32 || (cp >= 0x7f && cp <= 0x9f)) return "Control characters are not allowed in custom words.";
+            if (++chars > 20) return "Each custom word or phrase must be at most 20 Unicode characters.";
+        }
+        for (size_t j = 0; j < i; j++)
+            if (!strcmp(json_object_get_string(value), json_object_get_string(json_object_array_get_idx(terms, j))))
+                return "That exact word or phrase is already in the list.";
+    }
+    return NULL;
 }
 bool transcript_blank(const char *text) {
     while (*text) {

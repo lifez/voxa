@@ -25,12 +25,15 @@ voxa: $(SOURCES) voxa.h $(GENERATED)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SOURCES) -o $@ $(LDFLAGS) $(LDLIBS)
 voxa-test: $(SOURCES) voxa.h $(GENERATED)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DVOXA_TESTING $(SOURCES) -o $@ $(LDFLAGS) $(LDLIBS)
-test: voxa voxa-test $(KEYBOARD_TEST)
+voxa-config-test: test_config.c config.c voxa.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) test_config.c config.c -o $@ $(LDFLAGS) $(LDLIBS)
+test: voxa voxa-test voxa-config-test $(KEYBOARD_TEST)
 	$(if $(KEYBOARD_TEST),./$(KEYBOARD_TEST),:)
 	python3 test_native.py
+	python3 test_vocabulary.py
 sanitize:
 	$(MAKE) clean
 	$(MAKE) CFLAGS='-O1 -g -std=c11 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -fno-omit-frame-pointer' LDFLAGS='-fsanitize=address,undefined' test
 clean:
-	rm -f voxa voxa-test voxa-c voxa-c-test voxa-keyboard-test $(GENERATED)
+	rm -f voxa voxa-test voxa-config-test voxa-c voxa-c-test voxa-keyboard-test $(GENERATED)
 .PHONY: all test sanitize clean

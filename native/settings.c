@@ -116,6 +116,50 @@ out:
     secure_clear(input, sizeof(input)); secure_clear(data, sizeof(data));
     return result;
 }
+static int edit_vocabulary(void) {
+    Config c;
+    if (config_read(&c)) return -1;
+    int result = -1;
+    char input[4096], path[4096];
+    json_object *terms = json_object_object_get(c.json, "keyterms");
+    puts("Custom vocabulary — Scribe v2 Realtime\n"
+         "Up to 50 words or phrases, 20 Unicode characters each.\n"
+         "Vocabulary hints, not guaranteed replacements. Saved terms are sent to\n"
+         "ElevenLabs with transcription; keyterm prompting has an additional provider cost.");
+    while (!quitting) {
+        size_t count = json_object_array_length(terms);
+        printf("\nSaved custom words (%zu/50):\n", count);
+        if (!count) puts("  (none)");
+        for (size_t i = 0; i < count; i++)
+            printf("  %zu) %s\n", i+1, json_object_get_string(json_object_array_get_idx(terms, i)));
+        if (ask("a) Add  r) Remove  b) Back", "b", false, input, sizeof(input))) goto out;
+        if (!*input || !strcmp(input, "b")) { result = 0; goto out; }
+        if (!strcmp(input, "a")) {
+            if (ask("Word or phrase", "", false, input, sizeof(input))) goto out;
+            trim_whitespace(input);
+            json_object_array_add(terms, json_object_new_string(input));
+            const char *error = keyterms_error(terms);
+            if (error) {
+                json_object_array_del_idx(terms, count, 1);
+                puts(error); continue;
+            }
+        } else if (!strcmp(input, "r")) {
+            if (ask("Number to remove (blank cancels)", "", false, input, sizeof(input))) goto out;
+            if (!*input) continue;
+            char *end; errno = 0;
+            unsigned long number = strtoul(input, &end, 10);
+            if (errno || *end || number < 1 || number > count) {
+                puts("Choose a number from the saved list."); continue;
+            }
+            json_object_array_del_idx(terms, number-1, 1);
+        } else { puts("Choose a, r or b."); continue; }
+        if (config_path(path, sizeof(path), "config.json") ||
+            save(path, json_object_to_json_string_ext(c.json, JSON_C_TO_STRING_PRETTY), 0600)) goto out;
+        puts("Custom vocabulary saved; applies to the next recording.");
+    }
+out:
+    config_free(&c); return result;
+}
 static int edit_config(int section) {
     Config c;
     if (config_read(&c)) return -1;
@@ -270,13 +314,14 @@ static int settings(bool setup) {
         return doctor();
     }
     while (!quitting) {
-        puts("\n1) API key  2) Language  3) Microphone  4) Final punctuation  5) Shortcuts  0) Done");
+        puts("\n1) API key  2) Language  3) Microphone  4) Final punctuation  5) Shortcuts  6) Custom vocabulary  0) Done");
         char input[32];
         if (ask("Choose", "0", false, input, sizeof(input))) return 1;
         if (!*input || !strcmp(input, "0")) return 0;
         int result = -1;
         if (!strcmp(input, "1")) result = edit_key();
         else if (!strcmp(input, "2") || !strcmp(input, "3") || !strcmp(input, "4")) result = edit_config(atoi(input));
+        else if (!strcmp(input, "6")) result = edit_vocabulary();
         else if (!strcmp(input, "5")) {
 #ifdef __APPLE__
             puts("Command+Shift+R: hold; Command+Shift+U: toggle by default. Record shortcuts in the Voxa menu bar."); result = 0;

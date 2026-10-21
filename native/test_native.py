@@ -104,7 +104,7 @@ elif role == 'omarchy-shell':
 
 class Fixture:
     def __init__(self, case, config=None, text="สวัสดี hello.", delay=0,
-                 error=False, no_response=False, no_osd=False, extra_env=None):
+                 error=False, no_response=False, no_osd=False, extra_env=None, http_error=False):
         self.tmp = tempfile.TemporaryDirectory(prefix="voxa-")
         self.dir = Path(self.tmp.name)
         self.config = self.dir / "voxa"
@@ -121,7 +121,7 @@ class Fixture:
                     "ELEVENLABS_API_KEY": "test-key-1,test-key-2", "PATH": f"{bin_dir}:{os.environ['PATH']}"}
         self.env.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
         self.env.update(extra_env or {})
-        self.chunks, self.keys, self.errors = [], [], []
+        self.chunks, self.keys, self.errors, self.requests = [], [], [], []
         self.clients = set()
         fixture = self
 
@@ -139,6 +139,10 @@ class Fixture:
                     headers = dict(line.split(": ", 1) for line in request.decode().split("\r\n")[1:] if ": " in line)
                     headers = {k.lower(): v for k, v in headers.items()}
                     fixture.keys.append(headers["xi-api-key"])
+                    fixture.requests.append(request.decode().split("\r\n")[0].split()[1])
+                    if http_error:
+                        sock.sendall(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        return
                     accept = base64.b64encode(hashlib.sha1((headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest())
                     sock.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + b"\r\n\r\n")
                     if error:

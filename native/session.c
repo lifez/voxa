@@ -110,8 +110,18 @@ int session_run(int control, Config *config, const char *test_endpoint, bool pri
     double started = now_ms(), stopped = 0, first_pcm = -1, ready_at = -1, drained_at = -1;
     curl_socket_t network = CURL_SOCKET_BAD;
     if (!curl || !multi || !stream) goto cleanup;
-    url = test_endpoint ? strdup(test_endpoint) : scribe_url(curl, config);
+    url = scribe_url(curl, config);
     if (!url) goto cleanup;
+#ifdef VOXA_TESTING
+    if (test_endpoint) {
+        char *local = NULL;
+        int n = asprintf(&local, "%s%s", test_endpoint, strchr(url, '?'));
+        if (n < 0) goto cleanup;
+        free(url); url = local;
+    }
+#else
+    (void)test_endpoint;
+#endif
     char header[4120];
     snprintf(header, sizeof(header), "xi-api-key: %s", config->key);
     headers = curl_slist_append(NULL, header);
