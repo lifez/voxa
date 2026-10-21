@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 [[ "$(uname -s)" == Darwin ]] || { echo 'Run on macOS' >&2; exit 1; }
+[[ "$EUID" -ne 0 ]] || { echo 'Run without sudo; Voxa installs for the current user.' >&2; exit 1; }
 for cmd in cc make pkg-config swiftc; do command -v "$cmd" >/dev/null || { echo "Missing $cmd" >&2; exit 1; }; done
 cd "$(dirname "$0")/.."
 # Apple's system libcurl may lack WebSocket support. Prefer Homebrew libraries.
@@ -12,7 +13,8 @@ if command -v brew >/dev/null; then
 fi
 pkg-config --exists libcurl json-c
 make -C native clean all
-if ! native/voxa doctor | grep -q '^OK libcurl WSS support$'; then
+diagnostics=$(native/voxa doctor || true)
+if ! grep -q '^OK libcurl WSS support$' <<< "$diagnostics"; then
   echo 'Built libcurl lacks WSS support; refusing to install.' >&2; exit 1
 fi
 app="$HOME/Applications/Voxa.app"
