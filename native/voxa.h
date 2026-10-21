@@ -52,6 +52,8 @@ typedef struct {
 int config_load(Config *c, unsigned key_index);
 int config_read(Config *c);
 void config_free(Config *c);
+const char *keyterms_error(json_object *terms);
+void trim_whitespace(char *text);
 char *scribe_url(CURL *curl, Config *c);
 void format_transcript(char *text, bool punctuation);
 bool transcript_blank(const char *text);
